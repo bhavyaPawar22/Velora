@@ -7,10 +7,11 @@
 {% block body %}
     <h1> Solution: </h1>
     <table>
-    {% for r, l in result: %}
+    {% for r, l, u in result: %}
         <tr> 
             <td> Length: {% print(l) %} km </td>            
             <td> Route: {% print(r) %} </td>
+            <td> <img src="data:image/png;base64, {{ u }}" alt="Bengaluru Map"> </td>
         </tr>
     {% endfor %}
     </table>

@@ -77,8 +77,8 @@ def plot_route(route_lat, route_lng):
     fig = Figure()
     ax = fig.subplots()
     ax.plot(route_lat, route_lng, 'r')
-    ax.set_xlim([12.8, 13.2])
-    ax.set_ylim([77.5, 77.9])
+    ax.set_xlim([12.9, 13.0])
+    ax.set_ylim([77.55, 77.65])
     ax.set_title('Bengaluru')
 
     buf = io.BytesIO()
