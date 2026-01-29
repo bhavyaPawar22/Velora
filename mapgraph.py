@@ -29,37 +29,27 @@ def haversine_distance(nd1, nd2):
 
 def load_nodes(file):
     nf = open(file, 'r')
-    nr = csv.reader(nf)
-    i = 0
+    nr = csv.DictReader(nf)
     for row in nr:
-        if len(row) != 0:
-            if i == 0:
-                i = 1
-                continue
-            row[0] = int(row[0])
-            row[1] = float(row[1])
-            row[2] = float(row[2])
-            nodes[row[0]] = (row[1], row[2])
-            r_nodes[row[0]] = (row[1], row[2])
-            xnodes[(row[1], row[2])] = row[0]
-            edges[row[0]] = []
-            r_edges[row[0]] = []
+        row['id'] = int(row['id'])
+        row['lat'] = float(row['lat'])
+        row['lng'] = float(row['lng'])
+        nodes[row['id']] = (row['lat'], row['lng'])
+        r_nodes[row['id']] = (row['lat'], row['lng'])
+        xnodes[(row['lat'], row['lng'])] = row['id']
+        edges[row['id']] = []
+        r_edges[row['id']] = []
     nf.close()
 
 def load_edges(file):
     ef = open(file, 'r')
-    er = csv.reader(ef)
-    i = 0
+    er = csv.DictReader(ef)
     for row in er:
-        if len(row) != 0:
-            if i == 0:
-                i = 1
-                continue
-            row[0] = int(row[0])
-            row[1] = int(row[1])
-            row[2] = float(row[2])
-            edges[row[0]].append((row[1], row[2]))
-            r_edges[row[1]].append((row[0], row[2]))
+        row['id1'] = int(row['id1'])
+        row['id2'] = int(row['id2'])
+        row['length'] = float(row['length'])
+        edges[row['id1']].append((row['id2'], row['length']))
+        r_edges[row['id2']].append((row['id1'], row['length']))
     ef.close()
 
 def precompute():
