@@ -30,7 +30,7 @@ def haversine_distance(nd1, nd2):
     return d
 
 def load_nodes(file):
-    if os.path.isfile(file):
+    try:
         nf = open(file, 'r')
         nr = csv.DictReader(nf)
         for row in nr:
@@ -43,11 +43,11 @@ def load_nodes(file):
             edges[row['id']] = []
             r_edges[row['id']] = []
         nf.close()
-    else:
-        raise FileNotFoundError(file + ' not found!')
+    except Exception as e:
+        raise KeyError(str(row))
 
 def load_edges(file):
-    if os.path.isfile(file):
+    try:
         ef = open(file, 'r')
         er = csv.DictReader(ef)
         for row in er:
@@ -57,8 +57,8 @@ def load_edges(file):
             edges[row['id1']].append((row['id2'], row['length']))
             r_edges[row['id2']].append((row['id1'], row['length']))
         ef.close()
-    else:
-        raise FileNotFoundError(file + ' not found!')
+    except Exception as e:
+        raise KeyError(str(row))
 
 def precompute():
     global points
