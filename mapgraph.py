@@ -9,10 +9,11 @@ import base64
 import matplotlib
 from matplotlib.figure import Figure
 matplotlib.use('Agg')
+import requests
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-node_file = os.path.join(script_dir, 'graph_nodes.csv')
-edge_file = os.path.join(script_dir, 'graph_edges.csv')
+node_file = 'https://media.githubusercontent.com/media/kaustavbhowal21/Velora/refs/heads/main/graph_nodes.csv'
+edge_file = 'https://media.githubusercontent.com/media/kaustavbhowal21/Velora/refs/heads/main/graph_edges.csv'
 
 nodes = {}
 xnodes = {}
@@ -29,10 +30,9 @@ def haversine_distance(nd1, nd2):
     d = 2 * R * np.arcsin(np.sqrt((np.sin(dlat / 2)**2 + np.cos(np.radians(nodes[nd1][0])) * np.cos(np.radians(nodes[nd2][0])) * np.sin(dlon / 2)**2)))
     return d
 
-def load_nodes(file):
-    try:
-        nf = open(file, 'r')
-        nr = csv.DictReader(nf)
+def load_nodes(url):
+    with requests.get(url, stream=True) as r:
+        nr = csv.DictReader(r.iter_lines(decode_unicode=True))
         for row in nr:
             row['id'] = int(row['id'])
             row['lat'] = float(row['lat'])
@@ -42,14 +42,10 @@ def load_nodes(file):
             xnodes[(row['lat'], row['lng'])] = row['id']
             edges[row['id']] = []
             r_edges[row['id']] = []
-        nf.close()
-    except Exception as e:
-        raise KeyError(str(row))
 
-def load_edges(file):
-    try:
-        ef = open(file, 'r')
-        er = csv.DictReader(ef)
+def load_edges(url):
+    with requests.get(url, stream=True) as r:
+        er = csv.DictReader(r.iter_lines(decode_unicode=True))
         for row in er:
             row['id1'] = int(row['id1'])
             row['id2'] = int(row['id2'])
@@ -57,8 +53,6 @@ def load_edges(file):
             edges[row['id1']].append((row['id2'], row['length']))
             r_edges[row['id2']].append((row['id1'], row['length']))
         ef.close()
-    except Exception as e:
-        raise KeyError(str(row))
 
 def precompute():
     global points
