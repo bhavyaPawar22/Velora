@@ -3,6 +3,11 @@ import heapq
 import sys
 from scipy.spatial import KDTree
 import csv
+import io
+import base64
+import matplotlib
+from matplotlib.figure import Figure
+matplotlib.use('Agg')
 
 node_file = 'graph_nodes.csv'
 edge_file = 'graph_edges.csv'
@@ -57,7 +62,6 @@ def load_edges(file):
             r_edges[row[1]].append((row[0], row[2]))
     ef.close()
 
-
 def precompute():
     global points
     global tree
@@ -68,6 +72,21 @@ def precompute():
     tree = KDTree(points)
 
     print('Pre Computation Complete!')
+
+def plot_route(route_lat, route_lng):
+    fig = Figure()
+    ax = fig.subplots()
+    ax.plot(route_lat, route_lng, 'r')
+    ax.set_xlim([12.8, 13.2])
+    ax.set_ylim([77.5, 77.9])
+    ax.set_title('Bengaluru')
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+
+    plot_url = base64.b64encode(buf.getvalue()).decode('utf8')
+    return plot_url
 
 def nearest_node(loc):
     md, p = tree.query(loc, k=1)
@@ -135,4 +154,4 @@ def optimal_route(src, dest):
             route_lng.append(r_nodes[n][1])
         route_lat.append(None)
         route_lng.append(None)
-    return route, length
+    return route, length, plot_route(route_lat, route_lng)
