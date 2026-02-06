@@ -1,3 +1,16 @@
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+#                                                                                                   #
+#   Include:                                                                                        #
+#   import mapgraph as mp                                                                           #
+#   mp.precompute()                                                                                 #
+#                                                                                                   #
+#   Member Functions:                                                                               #
+#   mp.nearest_node(tuple of coordinates (lat, lng)) -> id of nearest node                          #
+#   mp.optimal_route(source_node, destination_node) -> route (list of ordered nodes), length        #
+#   mp.plot_route(route_lat, route_lng) -> url of plotted graph                                     #
+#                                                                                                   #
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+
 import numpy as np
 import heapq
 import sys
@@ -9,11 +22,11 @@ import base64
 import matplotlib
 from matplotlib.figure import Figure
 matplotlib.use('Agg')
-import requests
+import psutil
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-node_file = 'https://media.githubusercontent.com/media/kaustavbhowal21/Velora/refs/heads/main/graph_nodes.csv'
-edge_file = 'https://media.githubusercontent.com/media/kaustavbhowal21/Velora/refs/heads/main/graph_edges.csv'
+node_file = 'graph_nodes.csv'
+edge_file = 'graph_edges.csv'
 
 nodes = {}
 xnodes = {}
@@ -30,9 +43,9 @@ def haversine_distance(nd1, nd2):
     d = 2 * R * np.arcsin(np.sqrt((np.sin(dlat / 2)**2 + np.cos(np.radians(nodes[nd1][0])) * np.cos(np.radians(nodes[nd2][0])) * np.sin(dlon / 2)**2)))
     return d
 
-def load_nodes(url):
-    with requests.get(url, stream=True) as r:
-        nr = csv.DictReader(r.iter_lines(decode_unicode=True))
+def load_nodes():
+    with open(node_file, 'r') as f:
+        nr = csv.DictReader(f)
         for row in nr:
             row['id'] = int(row['id'])
             row['lat'] = float(row['lat'])
@@ -43,9 +56,9 @@ def load_nodes(url):
             edges[row['id']] = []
             r_edges[row['id']] = []
 
-def load_edges(url):
-    with requests.get(url, stream=True) as r:
-        er = csv.DictReader(r.iter_lines(decode_unicode=True))
+def load_edges():
+    with open(edge_file, 'r') as f:
+        er = csv.DictReader(f)
         for row in er:
             row['id1'] = int(row['id1'])
             row['id2'] = int(row['id2'])
@@ -56,13 +69,14 @@ def load_edges(url):
 def precompute():
     global points
     global tree
-    load_nodes(node_file)
-    load_edges(edge_file)
+    load_nodes()
+    load_edges()
 
     points = np.array(list(r_nodes.values()))
     tree = KDTree(points)
 
-    print('Pre Computation Complete!')
+    process = psutil.Process()
+    print('Pre Computation Complete! used memory:', process.memory_info().rss, 'bytes')
 
 def plot_route(route_lat, route_lng):
     fig = Figure()
@@ -137,12 +151,12 @@ def optimal_route(src, dest):
     route, length = astar(src, dest)
     #print('heuristic_route:', route)
     #print('Length:', length)
-    route_lat = []
-    route_lng = []
-    if route is not None:
-        for n in route:
-            route_lat.append(r_nodes[n][0])
-            route_lng.append(r_nodes[n][1])
-        route_lat.append(None)
-        route_lng.append(None)
-    return route, length, plot_route(route_lat, route_lng)
+    # route_lat = []
+    # route_lng = []
+    # if route is not None:
+    #     for n in route:
+    #         route_lat.append(r_nodes[n][0])
+    #         route_lng.append(r_nodes[n][1])
+    #     route_lat.append(None)
+    #     route_lng.append(None)
+    return route, length #, plot_route(route_lat, route_lng)

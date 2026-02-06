@@ -1235,7 +1235,7 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
 if __name__ == "__main__":
     import sys
     
-    filepath = "TestCase_TC02.xlsx"
+    filepath = "TestCases/TestCase_TC02.xlsx"
     if len(sys.argv) > 1:
         filepath = sys.argv[1]
     
