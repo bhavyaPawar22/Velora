@@ -27,8 +27,8 @@ matplotlib.use('Agg')
 import psutil
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-node_file = './Velora/graph_nodes.csv'
-edge_file = './Velora/graph_edges.csv'
+node_file = 'graph_nodes.csv'
+edge_file = 'graph_edges.csv'
 
 nodes = {}
 xnodes = {}
@@ -74,6 +74,24 @@ def load_edges():
             edges[row['id1']].append((row['id2'], row['length']))
             r_edges[row['id2']].append((row['id1'], row['length']))
 
+def generate_map():
+    for e1 in edges:
+        for e2, d in edges[e1]:
+            map_lat.extend([nodes[e1][0], nodes[e2][0], None])
+            map_lng.extend([nodes[e1][1], nodes[e2][1], None])
+
+def connected(n):
+    queue = deque([n])
+    while queue:
+        # Dequeue a node from the front of the queue
+        node = queue.popleft()
+        if c_nodes[node] == 0:
+            # Mark node as visited and add to traversal list
+            c_nodes[node] = 1
+            for c, d in edges[node]:
+                if c_nodes[c] == 0:
+                    queue.append(c)
+
 def precompute():
     global points
     global tree
@@ -81,6 +99,7 @@ def precompute():
 
     load_nodes()
     load_edges()
+    generate_map()
 
     points = np.array(list(r_nodes.values()))
     tree = KDTree(points)
@@ -88,6 +107,42 @@ def precompute():
     process = psutil.Process()
     print('Graph size:', len(r_nodes), 'Nodes')
     print('Pre Computation Complete! used memory:', (process.memory_info().rss / 1024**3), 'GB')
+
+def plot_route(route_lat, route_lng):
+    fig = Figure()
+    ax = fig.subplots()
+    ax.plot(map_lat, map_lng, 'b')
+    ax.plot(route_lat, route_lng, 'r')
+    ax.set_xlim([12.9, 13.0])
+    ax.set_ylim([77.55, 77.65])
+    ax.set_title('Bengaluru')
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+
+    plot_url = base64.b64encode(buf.getvalue()).decode('utf8')
+    return plot_url
+
+def plot_coords(coords_lat, coords_lng, labels):
+    fig = Figure()
+    ax = fig.subplots()
+    ax.plot(map_lat, map_lng, 'b')
+    ax.scatter(coords_lat, coords_lng, c='red', s=10, zorder=2.5)
+    for i in range(len(labels)):
+        ax.text(coords_lat[i], coords_lng[i], labels[i], fontsize=10, color='red',
+            ha='left', va='bottom',
+            path_effects=[pe.withStroke(linewidth=3, foreground='white')])
+    ax.set_xlim([12.9, 13.0])
+    ax.set_ylim([77.55, 77.65])
+    ax.set_title('Bengaluru')
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format='png', bbox_inches='tight')
+    buf.seek(0)
+
+    plot_url = base64.b64encode(buf.getvalue()).decode('utf8')
+    return plot_url
 
 def nearest_node(loc):
     md, p = tree.query(loc, k=1)
@@ -142,6 +197,18 @@ def astar(src, dest):
                 f_dist[ngh] = tg + haversine_distance(ngh, dest)
                 heapq.heappush(open_set, (f_dist[ngh], ngh))
     return None, float('inf')
+
+def optimal_route_plot(src, dest):
+    route, length = astar(src, dest)
+    route_lat = []
+    route_lng = []
+    if route is not None:
+        for n in route:
+            route_lat.append(r_nodes[n][0])
+            route_lng.append(r_nodes[n][1])
+        route_lat.append(None)
+        route_lng.append(None)
+    return route, length, plot_route(route_lat, route_lng)
 
 def optimal_route(src, dest):
     route, length = astar(src, dest)

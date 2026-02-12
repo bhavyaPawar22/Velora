@@ -1,18 +1,70 @@
 {% extends 'base.html' %}
 
 {% block head %}
-<title> Optimal Solution </title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/output.css') }}">
+    <title>Velora | Optimal Route</title>
 {% endblock %}
 
 {% block body %}
-    <h1> Solution: </h1>
-    <table>
-    {% for r, l, u in result: %}
-        <tr> 
-            <td> Length: {% print(l) %} km </td>            
-            <td> Route: {% print(r) %} </td>
-            <td> <img src="data:image/png;base64, {{ u }}" alt="Bengaluru Map"> </td>
-        </tr>
-    {% endfor %}
-    </table>
+    
+<header>
+    <div class="logo">Velora</div>
+</header>
+
+<section class="hero">
+    <div class="card">
+        <h1>Optimised Route Results</h1>
+        <p>Your uploaded testcase data has been processed successfully.</p>
+
+        <div class="table-container">
+            <table>
+                <tr> <td> <h2>Vehicle Schedules:</h2> </td> </tr>
+                {% for schedule in result['vehicle_schedules']: %}
+                <tr> 
+                    <td> Vehicle ID: {{ schedule['vehicle']['id'] }} </td>            
+                    <td> <p> Category: {{ schedule['vehicle']['category'] }} <br>
+                         Capacity: {{ schedule['vehicle']['capacity'] }} <br>
+                         Start Location: {{ schedule['vehicle']['start_location'] }} <br>
+                         Available From: {{ schedule['vehicle']['available_from'] }} </p> </td>
+                </tr>
+                    {% for trip in schedule['trips']: %}
+                    <tr>
+                        <td> TRIP {{ trip['trip_number'] }} </td>
+                        <td>
+                        <p>
+                            Employees Pickup Sequence: {% for e in trip['employees']: %} {% print(e + ' → ') %} {% endfor %} Office <br>
+                            Start: {{ trip['start_location'] }} at {{ trip['start_time'] }} <br>
+                            Arrival at Office: {{ trip['arrival_at_office'] }} <br>
+                            Distance: {{ trip['distance_km'] }} km <br>
+                            Cost: ₹{{ trip['cost'] }} 
+                        </p>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% endfor %}
+                <tr> <td> <h2>Summary:</h2> </td>
+                    <td> 
+                        <p>
+                            {% for d in result['summary']: %}
+                            {{ d }} : {{ result['summary'][d] }} <br>
+                            {% endfor %}
+                        </p>
+                    </td>
+                </tr>
+            </table>
+        </div>
+
+        <div class="action-buttons">
+            <button class="btn btn-primary">Download as Excel</button>
+            <button class="btn btn-secondary" onclick="window.location.href='/input'">
+                Upload New TestCase
+            </button>
+        </div>
+
+    </div>
+</section>
+
+<footer>
+    © 2026 Velora. Intelligent Route Optimisation Software.
+</footer>
 {% endblock %}

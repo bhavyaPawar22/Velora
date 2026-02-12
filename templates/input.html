@@ -1,13 +1,34 @@
 {% extends 'base.html' %}
 
 {% block head %}
-<title> Input TestCase </title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/input.css') }}">
+    <title>Velora | Route Optimisation</title>
 {% endblock %}
 
 {% block body %}
-<h1> Upload TestCase: </h1>
-<form action="/output" method="POST" enctype=multipart/form-data>
-    <p>Upload Excel File: <input type = "file" name = "file" /></p>  
-    <p><input type = "submit" value = "Upload" /></p>  
-</form>
+
+<header>
+    <div class="logo">Velora</div>
+</header>
+
+<section class="hero">
+    <div class="card">
+        <h1>Upload Your Data</h1>
+        <p>Import your TestCase Info via Excel (.xlsx) and let Velora optimise your plan instantly.</p>
+
+        <form action="/output" method="POST" enctype="multipart/form-data">
+            <div class="file-input">
+                <input type="file" name="file" accept=".xlsx" required>
+            </div>
+
+            <button type="submit" class="submit-btn" value = "Upload">
+                Optimise Routes
+            </button>
+        </form>
+    </div>
+</section>
+
+<footer>
+    © 2026 Velora. Intelligent Route Optimisation Software.
+</footer>
 {% endblock %}

@@ -1,0 +1,119 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    font-family: 'Inter', sans-serif;
+}
+
+body {
+    background: linear-gradient(135deg, #0f172a, #1e293b);
+    color: #fff;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+header {
+    padding: 20px 60px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.logo {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    color: #38bdf8;
+}
+
+.hero {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px 20px;
+}
+
+.card {
+    background: rgba(255, 255, 255, 0.05);
+    backdrop-filter: blur(12px);
+    border-radius: 16px;
+    padding: 40px;
+    width: 100%;
+    max-width: 500px;
+    box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+    text-align: center;
+}
+
+.card h1 {
+    font-size: 28px;
+    margin-bottom: 10px;
+}
+
+.card p {
+    font-size: 15px;
+    color: #cbd5e1;
+    margin-bottom: 30px;
+}
+
+.file-input {
+    position: relative;
+    margin-bottom: 25px;
+}
+
+.file-input input[type="file"] {
+    width: 100%;
+    padding: 14px;
+    border-radius: 8px;
+    border: 2px dashed #38bdf8;
+    background: transparent;
+    color: #fff;
+    cursor: pointer;
+}
+
+.file-input input[type="file"]::file-selector-button {
+    background: #38bdf8;
+    border: none;
+    padding: 8px 14px;
+    border-radius: 6px;
+    margin-right: 12px;
+    color: #0f172a;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.submit-btn {
+    width: 100%;
+    padding: 14px;
+    border-radius: 8px;
+    border: none;
+    background: linear-gradient(90deg, #38bdf8, #6366f1);
+    color: #fff;
+    font-weight: 600;
+    font-size: 16px;
+    cursor: pointer;
+    transition: 0.3s ease;
+}
+
+.submit-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(56,189,248,0.4);
+}
+
+footer {
+    text-align: center;
+    padding: 20px;
+    font-size: 13px;
+    color: #94a3b8;
+}
+
+@media (max-width: 600px) {
+    header {
+        padding: 20px;
+    }
+
+    .card {
+        padding: 30px 20px;
+    }
+}

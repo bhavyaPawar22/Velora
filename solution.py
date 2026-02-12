@@ -24,11 +24,14 @@ from typing import List, Dict, Tuple, Optional, Set
 from enum import Enum
 from itertools import permutations
 import mapgraph as mp
-mp.precompute()
+test_case_path = "TestCases/TestCase_TC01.xlsx"
 
 # =============================================================================
 # ENUMS AND DATA CLASSES
 # =============================================================================
+
+def precompute():    
+    mp.precompute()
 
 class VehiclePreference(Enum):
     PREMIUM = "premium"
@@ -1231,13 +1234,13 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
     
     return results
 
-
-if __name__ == "__main__":
-    import sys
+# if __name__ == "__main__":
+#     import sys
+#     precompute()
+#     filepath = test_case_path
+#     if len(sys.argv) > 1:
+#         filepath = sys.argv[1]
     
-    filepath = "TestCases/TestCase_TC02.xlsx"
-    if len(sys.argv) > 1:
-        filepath = sys.argv[1]
-    
-    print(f"Optimizing: {filepath}\n")
-    results = optimize(filepath)
+#     print(f"Optimizing: {filepath}\n")
+#     results = optimize(filepath)
+#     print(results)
