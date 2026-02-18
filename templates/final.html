@@ -10,6 +10,19 @@
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
+{% set colors = [
+    "#0B3D91",
+    "#0F52BA",
+    "#1560BD",
+    "#1E6FD9",
+    "#2A7FFF",
+    "#3D8BFF",
+    "#4DA3FF",
+    "#66B2FF",
+    "#3399CC",
+    "#1C5A99"
+] %}
+
 <style>
 
 /* ===============================
@@ -323,24 +336,24 @@ canvas {
 <table>
 <tr>
 <th>Trip</th>
-<th>Employees</th>
+<th>Route</th>
 <th>Start</th>
 <th>Arrival</th>
 <th>Distance (km)</th>
 <th>Cost</th>
 </tr>
 
+{% set ns = namespace(curr = vehicle.vehicle.id) %}
 {% for trip in vehicle.trips %}
-<tr>
+<tr style="background-color: {{ colors[(trip.trip_number - 1) % (colors | length)] }};">
 <td>{{ trip.trip_number }}</td>
 <td>
+    <span class="route-office">{{ ns.curr }}</span>
+    <span class="route-arrow">→</span>
     {% for emp in trip.employees %}
         <span class="route-pill">{{ emp }}</span>
-        {% if not loop.last %}
-            <span class="route-arrow">→</span>
-        {% endif %}
+        <span class="route-arrow">→</span>
     {% endfor %}
-    <span class="route-arrow">→</span>
     <span class="route-office">Office</span>
 </td>
 
@@ -349,6 +362,7 @@ canvas {
 <td>{{ trip.distance_km }}</td>
 <td>{{ trip.cost }}</td>
 </tr>
+    {% set ns.curr = "Office" %}
 {% endfor %}
 
 </table>
@@ -362,6 +376,7 @@ canvas {
 
 <script>
 const data = {{ data|tojson }};
+const colors = {{ colors|tojson }};
 const office = data.employee_pickups.Office;
 let maps = {};  
 
@@ -405,7 +420,7 @@ data.vehicle_schedules.forEach((vehicle,index)=>{
     vehicle.trips.forEach(trip=>{
         const coordinates = trip.route.map(coord => [coord[0], coord[1]]);
         L.polyline(coordinates,{
-            color:'#4f7cff',
+            color: colors[(trip.trip_number - 1) % colors.length],
             weight:4
         }).addTo(map);
         
