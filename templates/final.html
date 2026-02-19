@@ -8,14 +8,63 @@
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
 
 {% set colors = [
-"#0B3D91","#0F52BA","#1560BD","#1E6FD9",
-"#2A7FFF","#3D8BFF","#4DA3FF","#66B2FF",
-"#3399CC","#1C5A99"
+"#081633","#081736","#091839","#0A193C","#0A1A3F","#0B1B42","#0C1C45","#0C1D48","#0D1E4B","#0E1F4E",
+"#0E2051","#0F2154","#102257","#10235A","#11245D","#122560","#122663","#132766","#142869","#14296C",
+"#152A6F","#162B72","#162C75","#172D78","#182E7B","#182F7E","#193081","#1A3184","#1A3287","#1B338A",
+"#1C348D","#1C3590","#1D3693","#1E3796","#1E3899","#1F399C","#203A9F","#203BA2","#213CA5","#223DA8",
+"#223EAB","#233FAE","#2440B1","#2441B4","#2542B7","#2643BA","#2644BD","#2745C0","#2846C3","#2847C6",
+"#2948C9","#2A49CC","#2A4ACF","#2B4BD2","#2C4CD5","#2C4DD8","#2D4EDB","#2E4FDE","#2E50E1","#2F51E4",
+"#3052E7","#3053EA","#3154ED","#3255F0","#3256F3","#3357F6","#3458F9","#3459FC","#355AFF","#365BFF",
+"#365CFF","#375DFF","#385EFF","#385FFF","#3960FF","#3961FF","#3962FF","#3963FF","#3964FF","#3965E9",
+"#3864E6","#3763E3","#3662E0","#3561DD","#3460DA","#335FD7","#325ED4","#315DD1","#305CCE","#2F5BCB",
+"#2E5AC8","#2D59C5","#2C58C2","#2B57BF","#2A56BC","#2955B9","#2854B6","#2753B3","#2652B0","#2551AD"
+] %}
+
+{% set route_colors = [
+"#0A1A4F",
+"#0E2370",
+"#122C91",
+"#1635B2",
+"#1A3ED3",
+"#1E47F4",
+"#2A55FF",
+"#3563FF",
+"#4171FF",
+"#4D7FFF",
+"#3C8DFF",
+"#2A9BFF",
+"#18A9FF",
+"#06B7FF",
+"#00C6F5",
+"#009EDC",
+"#2A7CFF",
+"#5A5CFF",
+"#7A3CFF",
+"#9A1CFF"
+] %}
+
+{% set pie_colors = [
+"#FF3B30","#FF6B00","#FF9500","#FFCC00","#FFD60A",
+"#34C759","#30D158","#00C853","#00E676","#00BFA5",
+"#00BCD4","#00B0FF","#0091EA","#2979FF","#3D5AFE",
+"#5856D6","#7C4DFF","#9C27B0","#E040FB","#D500F9",
+"#FF2D55","#FF4081","#F50057","#C51162","#E91E63",
+"#FF1744","#D50000","#FF5252","#FF7043","#FF8A65",
+"#FFAB40","#FFC400","#AEEA00","#76FF03","#64DD17",
+"#1DE9B6","#00E5FF","#18FFFF","#40C4FF","#448AFF",
+"#536DFE","#651FFF","#AA00FF","#C51162","#FF80AB",
+"#FF4081","#F50057","#FF6EC7","#FF1493","#FF00FF"
 ] %}
 
 <style>
+
+* {
+    scrollbar-width: thin;
+    scrollbar-color: #4f7cff rgba(10,20,60,0.8);
+}
 
 html, body {
     margin: 0;
@@ -179,11 +228,90 @@ tr {
     border-radius: 20px;
     background: rgba(34,197,94,0.2);
 }
-
-canvas {
-    max-width: 300px;
+.trip-details-row {
+    display: none;
+    background: rgba(15,25,70,0.9);
 }
 
+.trip-details-content {
+    padding: 20px;
+    animation: slideDown 0.3s ease;
+}
+
+.inner-table {
+    width: 100%;
+    border-collapse: collapse;
+    background: rgba(20,30,80,0.9);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.inner-table th {
+    background: rgba(79,124,255,0.2);
+}
+
+.inner-table th,
+.inner-table td {
+    padding: 8px;
+    text-align: center;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+
+.dropoff-row {
+    background: rgba(34,197,94,0.15);
+    color: #86efac;
+}
+
+.trip-row:hover {
+    filter: brightness(1.1);
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateY(-6px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+canvas {
+    max-width: 500px;
+    max-height: 500px;
+    filter: drop-shadow(0px 10px 25px rgba(79,124,255,0.35));
+}
+
+/* ===============================
+   GLOBAL SCROLLBAR (Chrome, Edge, Safari)
+================================ */
+
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: rgba(10,20,60,0.8);
+}
+
+::-webkit-scrollbar-thumb {
+    background: linear-gradient(
+        180deg,
+        #4f7cff,
+        #8b5cf6
+    );
+    border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: linear-gradient(
+        180deg,
+        #3b6cff,
+        #7c3aed
+    );
+}
 </style>
 </head>
 <body>
@@ -200,6 +328,7 @@ canvas {
         {% for vehicle in data.vehicle_schedules %}
             <button class="nav-button"
                     onclick="showPane('vehicle{{ loop.index }}',this)">
+                <i class="fa fa-car" aria-hidden="true"></i>
                 Vehicle {{ vehicle.vehicle.id }}
             </button>
         {% endfor %}
@@ -221,20 +350,44 @@ canvas {
 
 <div class="kpi-row">
     <div class="kpi-card">
+        <h4>Elapsed Time</h4>
+        <h2>{{ data.breakdown.time_sec | round(3) }} s</h2>
+    </div>
+    <div class="kpi-card">
         <h4>Total Employees</h4>
         <h2>{{ data.summary.total_employees }}</h2>
     </div>
     <div class="kpi-card">
         <h4>Assigned</h4>
         <h2>{{ data.summary.employees_assigned }}</h2>
+    </div>    
+    <div class="kpi-card">
+        <h4>Total Trips</h4>
+        <h2>{{ data.summary.total_trips }}</h2>
+    </div>
+    <div class="kpi-card">
+        <h4>Vehicles Used</h4>
+        <h2>{{ data.summary.vehicles_used }}</h2>
+    </div>
+    <div class="kpi-card">
+        <h4>Total Distance</h4>
+        <h2>{{ data.summary.total_distance_km | round(2) }} km</h2>
     </div>
     <div class="kpi-card">
         <h4>Optimized Cost</h4>
-        <h2>{{ data.summary.travel_cost }}</h2>
+        <h2>₹{{ data.summary.travel_cost | round(2) }}</h2>
     </div>
     <div class="kpi-card">
         <h4>Baseline Cost</h4>
-        <h2>{{ data.summary.baseline_cost }}</h2>
+        <h2>₹{{ data.summary.baseline_cost | round(2) }}</h2>
+    </div>
+    <div class="kpi-card">
+        <h4>Savings</h4>
+        <h2>₹{{ data.summary.savings | round(2) }}</h2>
+    </div>
+    <div class="kpi-card">
+        <h4>Percentage Saved</h4>
+        <h2>{{ data.summary.savings_pct | round(2) }}%</h2>
     </div>
 </div>
 
@@ -251,24 +404,26 @@ canvas {
                 <th>Pickup Time</th>
                 <th>Drop-off Time</th>
             </tr>
-
+            {% set ns = namespace(ind = 0) %}
             {% for id, emp in data.employees.items() %}
-                <tr>
+                <tr style="background-color: {{ colors[ns.ind % (colors | length)] }};">
                     <td>{{ id }}</td>
                     <td>{{ emp.priority }}</td>
                     <td>{{ emp.vehicle }}</td>
                     <td>{{ emp.pickup_time }}</td>
                     <td>{{ emp.dropoff_time }}</td>
                 </tr>
+                {% set ns.ind = ns.ind + 1 %}
             {% endfor %}
         </table>
     </div>
 
     <!-- Donut Charts -->
     <div class="panel">
-        <h3>Fleet Distribution</h3>
-        <canvas id="timeDonut"></canvas>
-        <canvas id="costDonut"></canvas>
+        <h3>Fleet Distribution (COST)</h3>
+        <center><canvas id="costDonut" style="padding-bottom: 25px;"></canvas></center>
+        <h3>Fleet Distribution (TIME)</h3>
+        <center><canvas id="timeDonut" style="padding-top: 25px;"></canvas></center>
     </div>
 
 </div>
@@ -281,7 +436,7 @@ canvas {
 
 <h2 style="margin-bottom:20px;">Vehicle {{ vehicle.vehicle.id }}</h2>
 
-<div id="map{{ loop.index }}" class="map"></div>
+<div id="{{ vehicle.vehicle.id }}" class="map"></div>
 
 <table>
 <tr>
@@ -295,7 +450,9 @@ canvas {
 
 {% set ns = namespace(curr = vehicle.vehicle.id) %}
 {% for trip in vehicle.trips %}
-<tr style="background-color: {{ colors[(trip.trip_number - 1) % (colors | length)] }};">
+<tr class="trip-row" 
+    onclick="toggleTripDetails(this, '{{ vehicle.vehicle.id }}', {{ trip.trip_number }})" 
+    style="background-color: {{ route_colors[(trip.trip_number - 1) % (route_colors | length)] }};">
 <td>{{ trip.trip_number }}</td>
 <td>
     <span class="route-office">{{ ns.curr }}</span>
@@ -312,6 +469,33 @@ canvas {
 <td>{{ trip.distance_km }}</td>
 <td>{{ trip.cost }}</td>
 </tr>
+<!-- EXPANDABLE DETAILS ROW -->
+<tr class="trip-details-row">
+<td colspan="6">
+    <div class="trip-details-content">
+        <table class="inner-table">
+            <tr>
+                <th>Sequence</th>
+                <th>Employee</th>
+                <th>Pickup Time</th>
+            </tr>
+
+            {% for emp in trip.employees %}
+            <tr>
+                <td>{{ loop.index }}</td>
+                <td>{{ emp }}</td>
+                <td>{{ data.employees[emp].pickup_time }}</td>
+            </tr>
+            {% endfor %}
+
+            <tr class="dropoff-row">
+                <td colspan="2"><strong>Office</strong></td>
+                <td><strong>{{ trip.arrival_at_office }}</strong></td>
+            </tr>
+        </table>
+    </div>
+</td>
+</tr>
     {% set ns.curr = "Office" %}
 {% endfor %}
 
@@ -327,9 +511,11 @@ canvas {
 
 <script>
 const data = {{ data|tojson }};
-const colors = {{ colors|tojson }};
+const route_colors = {{ route_colors|tojson }};
+const pie_colors = {{ pie_colors|tojson }};
 const office = data.Office;
 let maps = {};
+let routes = {};
 
 function showPane(id,btn){
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -345,17 +531,58 @@ function showPane(id,btn){
     }, 100);
 }
 
+function toggleTripDetails(row, vehicle, row_n) {
+
+    const detailsRow = row.nextElementSibling;
+
+    const allDetails = document.querySelectorAll('.trip-details-row');
+
+    // Close all other expanded rows
+    allDetails.forEach(r => {
+        if (r !== detailsRow) {
+            r.style.display = "none";
+        }
+    });
+
+    // Reset color of all routes
+    for (let rn in routes[vehicle]){
+        routes[vehicle][rn].setStyle({
+            color: route_colors[(rn - 1) % route_colors.length]
+        });
+    }
+
+    // Toggle current
+    if (detailsRow.style.display === "table-row") {
+        detailsRow.style.display = "none";
+        routes[vehicle][row_n].setStyle({
+            color: route_colors[(row_n - 1) % route_colors.length]
+        });
+    } else {
+        detailsRow.style.display = "table-row";
+        routes[vehicle][row_n].setStyle({
+            color: "red"
+        });
+        routes[vehicle][row_n].bringToFront();
+        maps[vehicle].fitBounds(routes[vehicle][row_n].getBounds(), {
+            padding: [40, 40],   // space around route
+            maxZoom: 15,
+            animate: true,
+            duration: 0.8
+        });
+    }
+}
+
 /* ================= MAP INITIALIZATION ================= */
 
 data.vehicle_schedules.forEach((vehicle,index)=>{
-    const mapId = "map"+(index+1);
-    const map = L.map(mapId).setView([office[0],office[1]],12);
+    const map = L.map(vehicle.vehicle.id).setView([office[0],office[1]],12);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
         attribution:'© OpenStreetMap'
     }).addTo(map);
 
-    maps[mapId] = map; 
+    maps[vehicle.vehicle.id] = map; 
+    routes[vehicle.vehicle.id] = {};
     
     const start = vehicle.vehicle.start_location.replace(/[()]/g,"").split(",");
     L.marker([parseFloat(start[0]), parseFloat(start[1])])
@@ -368,8 +595,9 @@ data.vehicle_schedules.forEach((vehicle,index)=>{
 
     vehicle.trips.forEach(trip=>{
         const coordinates = trip.route.map(coord => [coord[0], coord[1]]);
-        L.polyline(coordinates,{
-            color: colors[(trip.trip_number - 1) % colors.length],
+        routes[vehicle.vehicle.id][trip.trip_number] = L.polyline(coordinates,{
+            color: route_colors[(trip.trip_number - 1) % route_colors.length],
+            zIndexOffset: 0,
             weight:4
         }).addTo(map);
         
@@ -394,20 +622,65 @@ data.vehicle_schedules.forEach(vehicle=>{
                        - trip.constraints.time.start_time;
         }
     });
-    ids.push("V"+vehicle.vehicle.id);
+    ids.push(vehicle.vehicle.id);
     costs.push(totalCost);
     times.push(totalTime/60);
 });
 
-new Chart(document.getElementById("timeDonut"),{
-    type:"doughnut",
-    data:{labels:ids,datasets:[{data:times,backgroundColor:colors}]}
+new Chart(document.getElementById("timeDonut"), {
+    type: "doughnut",
+    data: {
+        labels: ids,
+        datasets: [{
+            data: times,
+            backgroundColor: pie_colors,
+            borderColor: "#0b1437",
+            borderWidth: 3,
+            hoverOffset: 12
+        }]
+    },
+    options: {
+        cutout: "65%",
+        plugins: {
+            legend: {
+                position: "top",
+                labels: {
+                    color: "#e8ecff",
+                    padding: 20,
+                    boxWidth: 18
+                }
+            }
+        }
+    }
 });
 
-new Chart(document.getElementById("costDonut"),{
-    type:"doughnut",
-    data:{labels:ids,datasets:[{data:costs,backgroundColor:colors}]}
+new Chart(document.getElementById("costDonut"), {
+    type: "doughnut",
+    data: {
+        labels: ids,
+        datasets: [{
+            data: costs,
+            backgroundColor: pie_colors,
+            borderColor: "#0b1437",
+            borderWidth: 3,
+            hoverOffset: 12
+        }]
+    },
+    options: {
+        cutout: "65%",
+        plugins: {
+            legend: {
+                position: "top",
+                labels: {
+                    color: "#e8ecff",
+                    padding: 20,
+                    boxWidth: 18
+                }
+            }
+        }
+    }
 });
+
 
 </script>
 

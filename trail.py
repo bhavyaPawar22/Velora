@@ -31,7 +31,7 @@ import mapgraph as mp
 
 def precompute():    
     mp.precompute()
-    
+
 class VehiclePreference(Enum):
     PREMIUM = "premium"
     NORMAL = "normal"
@@ -61,11 +61,11 @@ class Location:
     lat: float
     lng: float
     
-    def distance_to(self, other: 'Location') -> float:
+    def distance_to(self, other: 'Location') -> Tuple[float, List[Any]]:
         src = mp.nearest_node((self.lat, self.lng))
         dst = mp.nearest_node((other.lat, other.lng))
         route, len = mp.optimal_route(src, dst)
-        return len
+        return len, route
     
     def __repr__(self):
         return f"({self.lat:.4f}, {self.lng:.4f})"
@@ -120,6 +120,7 @@ class Trip:
     arrival_at_office: float = 0.0
     pickup_times: Dict[str, float] = field(default_factory=dict)
     distance_km: float = 0.0
+    route: List[Tuple[float]] = field(default_factory=list)
     
     def copy(self) -> 'Trip':
         return Trip(
@@ -130,7 +131,8 @@ class Trip:
             start_location=self.start_location,
             arrival_at_office=self.arrival_at_office,
             pickup_times=self.pickup_times.copy(),
-            distance_km=self.distance_km
+            distance_km=self.distance_km,
+            route=self.route
         )
 
 
@@ -202,6 +204,9 @@ class DataLoader:
         emp_df = pd.read_excel(filepath, sheet_name='employees')
         veh_df = pd.read_excel(filepath, sheet_name='vehicles')
         base_df = pd.read_excel(filepath, sheet_name='baseline')
+
+        sum_baseline = base_df['baseline_cost'].sum()
+        time_baseline = base_df['baseline_time_min'].sum() if 'baseline_time_min' in base_df.columns else 0
         
         # Try to load metadata
         metadata = {'alpha': 0.7, 'beta': 0.3}
@@ -226,6 +231,10 @@ class DataLoader:
         # --- MODIFIED SECTION START ---
         # Load both baseline cost and baseline time
         baseline_data = {}
+
+        metadata['sum_baseline_cost'] = sum_baseline
+        metadata['sum_baseline_time'] = time_baseline
+
         for _, r in base_df.iterrows():
             eid = r['employee_id']
             # safely get time, assuming column might be 'baseline_time', 'time', or 'baseline_travel_time'
@@ -297,14 +306,14 @@ class TripConstraints:
         self.office = office
         self._dist_cache = {}
     
-    def distance(self, a: Location, b: Location) -> float:
+    def distance(self, a: Location, b: Location) -> Tuple[float, List[Any]]:
         key = (a.lat, a.lng, b.lat, b.lng)
         if key not in self._dist_cache:
             self._dist_cache[key] = a.distance_to(b)
         return self._dist_cache[key]
     
     def travel_time(self, a: Location, b: Location, speed: float) -> float:
-        return (self.distance(a, b) / speed) * 60
+        return (self.distance(a, b)[0] / speed) * 60
     
     def check_time_constraint(self, vehicle: Vehicle, employee_ids: List[str],
                                pickup_sequence: List[str], start_time: float,
@@ -318,13 +327,15 @@ class TripConstraints:
         current_loc = start_location
         pickup_times = {}
         total_dist = 0.0
+        final_route = []
         
         for eid in pickup_sequence:
             emp = self.employees[eid]
             
-            dist = self.distance(current_loc, emp.pickup)
+            dist, route = self.distance(current_loc, emp.pickup)
             travel = self.travel_time(current_loc, emp.pickup, vehicle.avg_speed)
             total_dist += dist
+            final_route += route[:-1]
             
             arrival_at_pickup = current_time + travel
             actual_pickup = max(arrival_at_pickup, emp.earliest_pickup)
@@ -333,9 +344,10 @@ class TripConstraints:
             current_time = actual_pickup + self.SERVICE_TIME
             current_loc = emp.pickup
         
-        dist = self.distance(current_loc, self.office)
+        dist, route = self.distance(current_loc, self.office)
         travel = self.travel_time(current_loc, self.office, vehicle.avg_speed)
         total_dist += dist
+        final_route += route
         arrival_at_office = current_time + travel
         
         is_feasible = arrival_at_office <= deadline
@@ -347,6 +359,7 @@ class TripConstraints:
             'slack': deadline - arrival_at_office,
             'pickup_times': pickup_times,
             'total_distance': total_dist,
+            'route': final_route,
             'start_time': start_time,
             'start_location': str(start_location)
         }
@@ -449,6 +462,7 @@ class ProblemState:
                  office: Location, metadata: Dict = None):
         self.employees = {e.id: e for e in employees}
         self.vehicles = {v.id: v for v in vehicles}
+        self.EMPLOYEES = list(employees)
         self.emp_list = employees
         self.veh_list = vehicles
         self.office = office
@@ -459,6 +473,9 @@ class ProblemState:
         self.metadata = metadata if metadata else {}
         self.alpha = self.metadata.get('alpha', 0.7)
         self.beta = self.metadata.get('beta', 0.3)
+
+        self.sum_baseline_cost = self.metadata.get('sum_baseline_cost', 1.0)
+        self.sum_baseline_time = self.metadata.get('sum_baseline_time', 1.0)
     
     def solution_cost(self, sol: Solution) -> Tuple[float, Dict]:
         """Calculate weighted objective: alpha * cost + beta * time"""
@@ -472,7 +489,7 @@ class ProblemState:
                 total_cost += trip.distance_km * schedule.vehicle.cost_per_km
                 total_time += trip.arrival_at_office - trip.start_time
         
-        objective = self.alpha * total_cost + self.beta * total_time
+        objective = self.alpha * total_cost / self.sum_baseline_cost + self.beta * total_time / self.sum_baseline_time
         
         return objective, {
             'objective': objective,
@@ -993,7 +1010,8 @@ class InitialSolutionBuilder:
             start_location=start_loc,
             arrival_at_office=details['arrival_at_office'],
             pickup_times=details.get('pickup_times', {}),
-            distance_km=details.get('total_distance', 0)
+            distance_km=details.get('total_distance', 0),
+            route=details.get('route', [])
         )
         
         schedule.trips.append(trip)
@@ -1032,7 +1050,8 @@ class InitialSolutionBuilder:
             start_location=start_loc,
             arrival_at_office=details['arrival_at_office'],
             pickup_times=details.get('pickup_times', {}),
-            distance_km=details.get('total_distance', 0)
+            distance_km=details.get('total_distance', 0),
+            route=details.get('route', [])
         )
         
         schedule.trips.append(trip)
@@ -1071,6 +1090,7 @@ class InitialSolutionBuilder:
         trip.arrival_at_office = details['arrival_at_office']
         trip.pickup_times = details.get('pickup_times', {})
         trip.distance_km = details.get('total_distance', 0)
+        trip.route = details.get('route', [])
         
         # Update subsequent trips' start times (only if there are more trips)
         if trip_idx + 1 < len(schedule.trips):
@@ -1141,6 +1161,8 @@ class InitialSolutionBuilder:
                 trip.pickup_times = details['pickup_times']
             if 'total_distance' in details:
                 trip.distance_km = details['total_distance']
+            if 'route' in details:
+                trip.route = details['route']
     
     # =========================================================================
     # PHASE III: MULTI-TRIP CONSOLIDATION
@@ -1230,6 +1252,7 @@ class InitialSolutionBuilder:
         trip_i.arrival_at_office = details['arrival_at_office']
         trip_i.pickup_times = details['pickup_times']
         trip_i.distance_km = details['total_distance']
+        trip_i.route = details['route']
         
         # Remove trip_j
         schedule.trips.remove(trip_j)
@@ -1274,6 +1297,8 @@ class InitialSolutionBuilder:
                         trip.pickup_times = time_details['pickup_times']
                     if 'total_distance' in time_details:
                         trip.distance_km = time_details['total_distance']
+                    if 'route' in time_details:
+                        trip.route = time_details['route']
                     
                     valid_trips.append(trip)
                     current_time = trip.arrival_at_office + self.constraints.DROP_TIME
@@ -1386,7 +1411,6 @@ class InitialSolutionBuilder:
         
         return self.alpha * total_cost + self.beta * total_time
 
-
 # =============================================================================
 # DESTROY / REPAIR OPERATORS
 # =============================================================================
@@ -1445,6 +1469,7 @@ class DestroyOperators:
                             trip.arrival_at_office = details['arrival_at_office']
                             trip.pickup_times = details.get('pickup_times', {})
                             trip.distance_km = details.get('total_distance', 0)
+                            trip.route = details.get('route', [])
                     
                     # RIPPLE EFFECT: Shift all subsequent trips earlier
                     self.builder._update_subsequent_trips(schedule, trip_idx)
@@ -1507,6 +1532,8 @@ class ALNSConfig:
         self.max_no_improve = 400
         self.temp_start = 0.05
         self.cooling = 0.9995
+        # NEW: Number of probabilistic initial attempts
+        self.num_runs = 20
 
 
 class ALNS:
@@ -1522,28 +1549,100 @@ class ALNS:
             self.destroy.worst_removal,
             self.destroy.trip_removal
         ]
+        
+        # Lambda used to pass k=2 to regret insertion
         self.repair_ops = [
             self.repair.greedy_insertion,
             lambda s, r: self.repair.regret_insertion(s, r, 2)
         ]
         
-        self.best_sol = None
-        self.best_cost = float('inf')
-    
+        # Global best across ALL runs
+        self.global_best_sol = None
+        self.global_best_cost = float('inf')
+        self.global_best_breakdown = {}
+
     def solve(self, verbose=True) -> Tuple[Solution, Dict]:
-        t0 = time.time()
+        t0_total = time.time()
         
-        builder = InitialSolutionBuilder(self.state)
-        current = builder.build()
-        curr_cost, _ = self.state.solution_cost(current)
-        
-        self.best_sol = current.copy()
-        self.best_cost = curr_cost
-        
-        assigned = len(current.all_assigned())
         if verbose:
-            print(f"Initial: objective={curr_cost:.2f}, trips={current.total_trips()}, "
-                  f"assigned={assigned}/{self.state.total_employees}")
+            print(f"Starting Multi-Start ALNS ({self.cfg.num_runs} runs)...")
+            print(f"{'Run':<5} | {'Init Cost':<10} | {'Final Cost':<10} | {'Assigned':<10} | {'Improv %':<10} | {'Status'}")
+            print("-" * 65)
+
+        # Initialize Global Best with a dummy empty solution
+        self.global_best_sol = None
+        self.global_best_cost = float('inf')
+        self.global_best_breakdown = {}
+
+        for run_idx in range(self.cfg.num_runs):
+            t0_run = time.time()
+            
+            # 1. Build Probabilistic Initial Solution
+            builder = InitialSolutionBuilder(self.state)
+            current_sol = builder.build()
+            
+            initial_cost, _ = self.state.solution_cost(current_sol)
+            
+            # Local best for this specific run
+            run_best_sol = current_sol.copy()
+            run_best_cost = initial_cost
+            
+            # 2. Run ALNS Optimization for this run
+            # Note: We pass copies to avoid reference issues
+            final_sol, run_best_sol, run_best_cost = self._run_alns_loop(
+                current_sol, run_best_sol, run_best_cost
+            )
+            
+            # 3. Check against Global Best
+            run_assigned = len(run_best_sol.all_assigned())
+            
+            if self.global_best_sol is None:
+                global_assigned = 0
+            else:
+                global_assigned = len(self.global_best_sol.all_assigned())
+            
+            is_new_global_best = False
+            
+            # PRIORITY 1: Assign MORE employees
+            if run_assigned > global_assigned:
+                is_new_global_best = True
+            
+            # PRIORITY 2: Same employees, LOWER cost
+            elif run_assigned == global_assigned:
+                if run_best_cost < self.global_best_cost:
+                    is_new_global_best = True
+            
+            status = ""
+            if is_new_global_best:
+                self.global_best_sol = run_best_sol.copy()
+                self.global_best_cost = run_best_cost
+                _, self.global_best_breakdown = self.state.solution_cost(run_best_sol)
+                status = "🏆 NEW BEST"
+
+            if verbose:
+                improv_pct = ((initial_cost - run_best_cost) / initial_cost * 100) if initial_cost > 0 else 0.0
+                print(f"{run_idx+1:<5} | {initial_cost:<10.5f} | {run_best_cost:<10.5f} | {run_assigned:<10} | {improv_pct:<9.1f}% | {status}")
+
+        elapsed_total = time.time() - t0_total
+        self.global_best_breakdown['time_sec'] = elapsed_total
+        self.global_best_breakdown['total_runs'] = self.cfg.num_runs
+        
+        if verbose:
+            print("-" * 65)
+            print(f"Total Optimization Time: {elapsed_total:.2f}s")
+            if self.global_best_sol:
+                final_assigned = len(self.global_best_sol.all_assigned())
+                print(f"Final Best Cost: {self.global_best_cost:.2f} (Assigned: {final_assigned}/{self.state.total_employees})")
+        
+        return self.global_best_sol, self.global_best_breakdown
+
+    def _run_alns_loop(self, current_sol: Solution, best_sol: Solution, best_cost: float):
+        """
+        Internal method to run one complete ALNS cycle on a given solution.
+        Returns: (final_current_sol, best_found_sol, best_found_cost)
+        """
+        current = current_sol
+        curr_cost = best_cost
         
         temp = self.cfg.temp_start * curr_cost if curr_cost > 0 else 100
         
@@ -1553,44 +1652,61 @@ class ALNS:
         while iteration < self.cfg.max_iter and no_improve < self.cfg.max_no_improve:
             iteration += 1
             
+            # Select Operators
             d_op = random.choice(self.destroy_ops)
             r_op = random.choice(self.repair_ops)
             
+            # Determine removal size q
             n_assigned = len(current.all_assigned())
             if n_assigned == 0:
-                current = self.best_sol.copy()
-                curr_cost = self.best_cost
+                # If empty, reset to best and continue
+                current = best_sol.copy()
+                curr_cost = best_cost
+                no_improve += 1
                 continue
-            
+                
             q = random.randint(self.cfg.q_min, min(self.cfg.q_max, n_assigned))
             
+            # Execute Destroy & Repair
             partial, removed = d_op(current, q)
             new_sol = r_op(partial, removed)
             new_cost, _ = self.state.solution_cost(new_sol)
             
+            # Calculate Acceptance Criteria
             new_assigned = len(new_sol.all_assigned())
             curr_assigned = len(current.all_assigned())
+            best_assigned = len(best_sol.all_assigned())
             
             accept = False
+            
+            # Priority 1: maximize assigned employees
             if new_assigned > curr_assigned:
                 accept = True
             elif new_assigned == curr_assigned:
-                if new_cost < self.best_cost:
-                    self.best_sol = new_sol.copy()
-                    self.best_cost = new_cost
+                # Priority 2: minimize cost (Simulated Annealing)
+                if new_cost < best_cost:
                     accept = True
-                    no_improve = 0
                 elif new_cost < curr_cost:
                     accept = True
-                elif random.random() < math.exp(-(new_cost - curr_cost) / max(temp, 0.01)):
-                    accept = True
+                else:
+                    # SA Probability
+                    prob = math.exp(-(new_cost - curr_cost) / max(temp, 0.01))
+                    if random.random() < prob:
+                        accept = True
             
+            # Update State
             if accept:
                 current = new_sol
                 curr_cost = new_cost
-                if new_cost < self.best_cost and new_assigned >= len(self.best_sol.all_assigned()):
-                    self.best_sol = new_sol.copy()
-                    self.best_cost = new_cost
+                
+                # Check if this is a new local best for this run
+                if new_assigned > best_assigned:
+                    best_sol = new_sol.copy()
+                    best_cost = new_cost
+                    no_improve = 0
+                elif new_assigned == best_assigned and new_cost < best_cost:
+                    best_sol = new_sol.copy()
+                    best_cost = new_cost
                     no_improve = 0
                 else:
                     no_improve += 1
@@ -1598,16 +1714,8 @@ class ALNS:
                 no_improve += 1
             
             temp *= self.cfg.cooling
-        
-        elapsed = time.time() - t0
-        _, breakdown = self.state.solution_cost(self.best_sol)
-        breakdown['time_sec'] = elapsed
-        breakdown['iterations'] = iteration
-        
-        if verbose:
-            print(f"\nDone in {elapsed:.2f}s, {iteration} iterations")
-        
-        return self.best_sol, breakdown
+            
+        return current, best_sol, best_cost
 
 
 # =============================================================================
@@ -1653,14 +1761,25 @@ class ResultsVerifier:
             'total_distance_km': round(breakdown['total_distance'], 2),
             'travel_cost': round(breakdown['travel_cost'], 2),
             'objective': round(breakdown['objective'], 2),
-            'alpha': self.state.alpha,
-            'beta': self.state.beta,
+            'alpha': round(self.state.alpha, 2),
+            'beta': 1 - round(self.state.alpha, 2),
             'baseline_cost': round(baseline_cost_total, 2),
             # --- MODIFIED: Add Weighted Baseline to summary ---
             'baseline_weighted': round(baseline_weighted_total, 2),
             'savings': round(baseline_cost_total - breakdown['travel_cost'], 2),
             'savings_pct': round((baseline_cost_total - breakdown['travel_cost']) / baseline_cost_total * 100, 2) if baseline_cost_total > 0 else 0
         }
+        
+        results['employees'] = {}
+        for emp in self.state.EMPLOYEES:
+            results['employees'][emp.id] = {}
+            results['employees'][emp.id]['priority'] = emp.priority
+            results['employees'][emp.id]['pickup'] = emp.pickup
+            results['employees'][emp.id]['vehicle'] = '-'
+            results['employees'][emp.id]['pickup_time'] = '-'
+            results['employees'][emp.id]['dropoff_time'] = '-'
+
+        results['Office'] = (float(self.state.office.lat), float(self.state.office.lng))
         
         for schedule in solution.schedules:
             if not schedule.trips:
@@ -1686,6 +1805,11 @@ class ResultsVerifier:
                 if not feasible:
                     results['all_constraints_satisfied'] = False
                 
+                for emp in trip.employees:
+                    results['employees'][emp]['vehicle'] = schedule.vehicle.id
+                    results['employees'][emp]['pickup_time'] = self._fmt_time(trip.pickup_times[emp])
+                    results['employees'][emp]['dropoff_time'] = self._fmt_time(trip.arrival_at_office)
+                
                 trip_info = {
                     'trip_number': i + 1,
                     'employees': trip.employees,
@@ -1694,6 +1818,7 @@ class ResultsVerifier:
                     'start_location': str(trip.start_location),
                     'arrival_at_office': self._fmt_time(trip.arrival_at_office),
                     'distance_km': round(trip.distance_km, 2),
+                    'route': trip.route,
                     'cost': round(trip.distance_km * schedule.vehicle.cost_per_km, 2),
                     'feasible': feasible,
                     'constraints': {
@@ -1815,6 +1940,7 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
     
     verifier = ResultsVerifier(state)
     results = verifier.verify_and_display(solution)
+    results['breakdown'] = breakdown
     
     if verbose:
         verifier.print_results(results)
@@ -1822,12 +1948,13 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
     return results
 
 
-# if __name__ == "__main__":
-#     import sys
-#     precompute()
-#     filepath = "TestCases/TestCase_TC01.xlsx"
-#     if len(sys.argv) > 1:
-#         filepath = sys.argv[1]
+if __name__ == "__main__":
+    import sys
     
-#     print(f"Optimizing: {filepath}\n")
-#     results = optimize(filepath)
+    precompute()
+    filepath = "TestCases/TestCase_TC02.xlsx"
+    if len(sys.argv) > 1:
+        filepath = sys.argv[1]
+    
+    print(f"Optimizing: {filepath}\n")
+    results = optimize(filepath)

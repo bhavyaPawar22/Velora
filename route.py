@@ -61,7 +61,7 @@ class Location:
     lat: float
     lng: float
     
-    def distance_to(self, other: 'Location') -> float:
+    def distance_to(self, other: 'Location') -> Tuple[float, List[Any]]:
         src = mp.nearest_node((self.lat, self.lng))
         dst = mp.nearest_node((other.lat, other.lng))
         route, len = mp.optimal_route(src, dst)
@@ -299,7 +299,7 @@ class TripConstraints:
         self.office = office
         self._dist_cache = {}
     
-    def distance(self, a: Location, b: Location) -> float:
+    def distance(self, a: Location, b: Location) -> Tuple[float, List[Any]]:
         key = (a.lat, a.lng, b.lat, b.lng)
         if key not in self._dist_cache:
             self._dist_cache[key] = a.distance_to(b)
@@ -1847,6 +1847,7 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
     
     verifier = ResultsVerifier(state)
     results = verifier.verify_and_display(solution)
+    results['breakdown'] = breakdown
     
     if verbose:
         verifier.print_results(results)
