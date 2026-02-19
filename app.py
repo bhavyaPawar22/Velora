@@ -1,5 +1,5 @@
 from flask import *
-import trail as sol
+import solution as sol
 import route as sol2
 
 sol.precompute()

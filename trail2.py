@@ -519,11 +519,11 @@ class SavingsEntry:
     best_vehicle: str = None
     best_sequence: List[str] = None
 
+
 class InitialSolutionBuilder:
     """
-    Probabilistic Constraint-First Solution Builder.
-    Uses randomization in Savings calculation and Regret selection (GRASP)
-    to generate diverse starting solutions.
+    Enhanced PWSA following the algorithm specification exactly.
+    All constraint checks are performed before any assignment.
     """
     
     def __init__(self, state, config: Dict = None):
@@ -540,26 +540,22 @@ class InitialSolutionBuilder:
         # Configuration
         self.config = config or {}
         self.max_trips_per_vehicle = self.config.get('max_trips', 10)
-        self.top_k_seeds = self.config.get('top_k_seeds', None)
-        
-        # PROBABILISTIC PARAMETERS
-        # Factor 0.0 = Deterministic, 0.2 = +/- 20% noise
-        self.noise_factor = self.config.get('noise_factor', 0.1) 
-        # Number of candidates to consider in Regret Insertion (RCL size)
-        self.rcl_size = self.config.get('rcl_size', 3) 
+        self.top_k_seeds = self.config.get('top_k_seeds', None)  # None = auto
         
         # Precomputed data
         self._savings_list: List[SavingsEntry] = []
-        self._individual_costs: Dict[str, Dict[str, float]] = {}
-        self._individual_times: Dict[str, Dict[str, float]] = {}
-        self._compatible_vehicles: Dict[str, Set[str]] = {}
+        self._individual_costs: Dict[str, Dict[str, float]] = {}  # emp_id -> vid -> cost
+        self._individual_times: Dict[str, Dict[str, float]] = {}  # emp_id -> vid -> time
+        self._compatible_vehicles: Dict[str, Set[str]] = {}       # emp_id -> set of vids
         
     def build(self) -> 'Solution':
-        """Main entry point - builds solution using Probabilistic PWSA."""
-        # Phase I: Savings Calculation (with Noise)
+        """
+        Main entry point - builds solution using PWSA algorithm.
+        """
+        # Phase I: Savings Calculation
         self._phase1_savings_calculation()
         
-        # Phase II: Hybrid Construction (with Restricted Candidate List)
+        # Phase II: Hybrid Construction
         solution = self._phase2_hybrid_construction()
         
         # Phase III: Multi-Trip Consolidation
@@ -571,16 +567,20 @@ class InitialSolutionBuilder:
         return solution
     
     # =========================================================================
-    # PHASE I: SAVINGS CALCULATION (Now with Noise)
+    # PHASE I: SAVINGS CALCULATION
     # =========================================================================
     
     def _phase1_savings_calculation(self):
         """
         Phase I: Calculate savings for all pairs.
-        S_ij = (α·ΔC + β·ΔT) * Random_Noise
+        S_ij = α·ΔC + β·ΔT where:
+        - ΔC = cost_i + cost_j - cost_combined
+        - ΔT = time_i + time_j - time_combined
         """
+        # Step 1: Compute individual costs and times for each employee
         self._compute_individual_metrics()
         
+        # Step 2: Calculate savings for all pairs
         self._savings_list = []
         emp_ids = [e.id for e in self.state.emp_list]
         n = len(emp_ids)
@@ -589,6 +589,7 @@ class InitialSolutionBuilder:
             for j in range(i + 1, n):
                 emp_i, emp_j = emp_ids[i], emp_ids[j]
                 
+                # Find common compatible vehicles
                 common_vehicles = (
                     self._compatible_vehicles.get(emp_i, set()) &
                     self._compatible_vehicles.get(emp_j, set())
@@ -597,14 +598,15 @@ class InitialSolutionBuilder:
                 if not common_vehicles:
                     continue
                 
+                # Check if merge satisfies Capacity & Time Windows (line 4 of algorithm)
                 entry = self._compute_pair_savings(emp_i, emp_j, common_vehicles)
                 
                 if entry and entry.weighted_savings > 0:
                     self._savings_list.append(entry)
         
-        # Sort desc. Noise in calculation ensures diverse sorting order.
+        # Sort by weighted savings S_ij in descending order (line 11)
         self._savings_list.sort(key=lambda x: x.weighted_savings, reverse=True)
-
+    
     def _compute_individual_metrics(self):
         """Compute individual cost and time for each employee with each vehicle."""
         for emp in self.state.emp_list:
@@ -613,13 +615,16 @@ class InitialSolutionBuilder:
             self._compatible_vehicles[emp.id] = set()
             
             for vehicle in self.state.veh_list:
+                # CONSTRAINT 3: Check vehicle type compatibility
                 if vehicle.category.lower() not in emp.allowed_vehicle_types:
                     continue
                 
+                # CONSTRAINT 2: Check capacity (single employee)
                 cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [emp.id])
                 if not cap_ok:
                     continue
                 
+                # CONSTRAINT 1: Check time feasibility
                 time_ok, details = self.constraints.check_time_constraint(
                     vehicle, [emp.id], [emp.id],
                     vehicle.available_from, vehicle.start_location
@@ -632,9 +637,13 @@ class InitialSolutionBuilder:
                     self._individual_costs[emp.id][vehicle.id] = cost
                     self._individual_times[emp.id][vehicle.id] = time_val
                     self._compatible_vehicles[emp.id].add(vehicle.id)
-
+    
     def _compute_pair_savings(self, emp_i: str, emp_j: str, 
-                              common_vehicles: Set[str]) -> Optional[SavingsEntry]:
+                               common_vehicles: Set[str]) -> Optional[SavingsEntry]:
+        """
+        Compute savings for a pair of employees.
+        Only returns entry if merge satisfies Capacity & Time Windows.
+        """
         best_cost_savings = float('-inf')
         best_time_savings = float('-inf')
         best_weighted = float('-inf')
@@ -645,47 +654,53 @@ class InitialSolutionBuilder:
         for vid in common_vehicles:
             vehicle = self.vehicles[vid]
             
+            # CONSTRAINT 2: Check capacity & sharing for pair
             cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [emp_i, emp_j])
-            if not cap_ok: continue
+            if not cap_ok:
+                continue
             
+            # CONSTRAINT 3: Check vehicle type for pair
             type_ok, _ = self.constraints.check_vehicle_type(vehicle, [emp_i, emp_j])
-            if not type_ok: continue
+            if not type_ok:
+                continue
             
+            # Find best sequence that satisfies CONSTRAINT 1 (time)
             best_seq = self.constraints.find_best_sequence(
                 vehicle, [emp_i, emp_j],
                 vehicle.available_from, vehicle.start_location
             )
             
-            if not best_seq: continue
+            if not best_seq:
+                continue  # No feasible sequence found
             
+            # CONSTRAINT 1: Verify time constraint
             time_ok, details = self.constraints.check_time_constraint(
                 vehicle, [emp_i, emp_j], best_seq,
                 vehicle.available_from, vehicle.start_location
             )
             
-            if not time_ok: continue
+            if not time_ok:
+                continue
             
+            # All constraints satisfied - calculate savings
             feasible_vehicles.add(vid)
             
             combined_cost = details['total_distance'] * vehicle.cost_per_km
             combined_time = details['arrival_at_office'] - vehicle.available_from
             
+            # Get individual metrics
             cost_i = self._individual_costs.get(emp_i, {}).get(vid, float('inf'))
             cost_j = self._individual_costs.get(emp_j, {}).get(vid, float('inf'))
             time_i = self._individual_times.get(emp_i, {}).get(vid, float('inf'))
             time_j = self._individual_times.get(emp_j, {}).get(vid, float('inf'))
             
-            if cost_i == float('inf') or cost_j == float('inf'): continue
+            if cost_i == float('inf') or cost_j == float('inf'):
+                continue
             
+            # Calculate savings (lines 5-7 of algorithm)
             delta_c = cost_i + cost_j - combined_cost
             delta_t = time_i + time_j - combined_time
             s_ij = self.alpha * delta_c + self.beta * delta_t
-            
-            # --- MODIFICATION: APPLY RANDOM NOISE HERE ---
-            # Randomize savings by +/- noise_factor (e.g., +/- 10%)
-            noise = random.uniform(1.0 - self.noise_factor, 1.0 + self.noise_factor)
-            s_ij *= noise
-            # ---------------------------------------------
             
             if s_ij > best_weighted:
                 best_cost_savings = delta_c
@@ -698,33 +713,46 @@ class InitialSolutionBuilder:
             return None
         
         return SavingsEntry(
-            employee_i=emp_i, employee_j=emp_j,
-            cost_savings=best_cost_savings, time_savings=best_time_savings,
+            employee_i=emp_i,
+            employee_j=emp_j,
+            cost_savings=best_cost_savings,
+            time_savings=best_time_savings,
             weighted_savings=best_weighted,
             compatible_vehicles=feasible_vehicles,
-            best_vehicle=best_vehicle, best_sequence=best_sequence
+            best_vehicle=best_vehicle,
+            best_sequence=best_sequence
         )
-
+    
     # =========================================================================
-    # PHASE II: HYBRID CONSTRUCTION (Now with GRASP / Restricted Candidate List)
+    # PHASE II: HYBRID CONSTRUCTION
     # =========================================================================
     
     def _phase2_hybrid_construction(self) -> 'Solution':
+        """
+        Phase II: Hybrid Construction
+        - Step 1: Seed Routes from top k pairs
+        - Step 2: Regret-k Insertion for remaining
+        """
+        # Initialize empty routes (line 13)
         solution = Solution()
         for v in self.state.veh_list:
             solution.schedules.append(VehicleSchedule(vehicle=v))
         
         assigned = set()
         
-        # Step 1: Seed Routes (Savings list is already randomized via noise)
+        # Step 1: Seed Routes (lines 14-20)
         assigned = self._step1_seed_routes(solution, assigned)
         
-        # Step 2: Regret-k Insertion (Using RCL)
+        # Step 2: Regret-k Insertion (lines 21-30)
         assigned = self._step2_regret_insertion(solution, assigned)
         
         return solution
     
     def _step1_seed_routes(self, solution: 'Solution', assigned: Set[str]) -> Set[str]:
+        """
+        Step 1: Create seed routes from top k pairs in L_savings.
+        """
+        # Determine k (number of seeds)
         if self.top_k_seeds is None:
             k = max(1, len(self.state.emp_list) // 4)
         else:
@@ -733,106 +761,121 @@ class InitialSolutionBuilder:
         seeds_created = 0
         
         for entry in self._savings_list:
-            if seeds_created >= k: break
+            if seeds_created >= k:
+                break
             
             emp_i, emp_j = entry.employee_i, entry.employee_j
-            if emp_i in assigned or emp_j in assigned: continue
             
+            # Skip if either already assigned
+            if emp_i in assigned or emp_j in assigned:
+                continue
+            
+            # Check if pair can initialize a route (line 16)
             if not self._can_create_route(solution, [emp_i, emp_j], entry.best_vehicle):
                 continue
             
+            # Create new route with pair (line 17)
             if self._create_trip(solution, [emp_i, emp_j], entry.best_vehicle, entry.best_sequence):
                 assigned.add(emp_i)
                 assigned.add(emp_j)
                 seeds_created += 1
         
         return assigned
-
+    
     def _step2_regret_insertion(self, solution: 'Solution', assigned: Set[str]) -> Set[str]:
         """
-        Step 2: Regret-k Insertion using Restricted Candidate List (RCL).
-        Instead of picking best regret, pick from top N best regrets.
+        Step 2: Regret-k Insertion for unassigned requests.
         """
         unassigned = [e.id for e in self.state.emp_list if e.id not in assigned]
         
         while unassigned:
-            candidates = [] # List of (regret, eid, best_insertion_tuple)
+            best_emp = None
+            best_regret = float('-inf')
+            best_insertion = None  # (objective, schedule_idx, trip_idx, is_new_trip)
             
-            # Calculate regret for ALL unassigned employees
             for eid in unassigned:
+                # Calculate insertion costs for all feasible positions (lines 24-25)
                 insertion_options = self._get_insertion_options(solution, eid)
                 
                 if not insertion_options:
                     continue
                 
+                # Sort by objective (cost)
                 insertion_options.sort(key=lambda x: x[0])
                 
-                c1 = insertion_options[0][0]
+                c1 = insertion_options[0][0]  # Best cost
                 c2 = insertion_options[1][0] if len(insertion_options) >= 2 else float('inf')
+                
+                # Regret = c2 - c1 (line 26)
                 regret = c2 - c1
                 
-                candidates.append((regret, eid, insertion_options[0]))
+                if regret > best_regret:
+                    best_regret = regret
+                    best_emp = eid
+                    best_insertion = insertion_options[0]
             
-            # If no candidates found, fallback to individual trips
-            if not candidates:
+            if best_emp is None:
+                # No feasible insertion - try to create individual trips
                 for eid in unassigned.copy():
                     if self._assign_to_new_trip(solution, eid):
                         assigned.add(eid)
                         unassigned.remove(eid)
                 break
             
-            # Sort candidates by Regret (Descending)
-            candidates.sort(key=lambda x: x[0], reverse=True)
-            
-            # --- MODIFICATION: RCL SELECTION ---
-            # Pick randomly from the top K candidates
-            rcl_limit = min(len(candidates), self.rcl_size)
-            selected_candidate = random.choice(candidates[:rcl_limit])
-            # -----------------------------------
-            
-            best_regret, best_emp, best_insertion = selected_candidate
-            
-            # Insert selected employee
+            # Insert u* into best position (line 29)
             obj, sched_idx, trip_idx, is_new, sequence = best_insertion
             
-            success = False
             if is_new:
-                success = self._create_trip_for_employee(solution, best_emp, sched_idx)
+                # Create new trip
+                schedule = solution.schedules[sched_idx]
+                vid = schedule.vehicle.id
+                if self._create_trip_for_employee(solution, best_emp, sched_idx):
+                    assigned.add(best_emp)
             else:
-                success = self._insert_into_trip(solution, best_emp, sched_idx, trip_idx, sequence)
+                # Insert into existing trip
+                if self._insert_into_trip(solution, best_emp, sched_idx, trip_idx, sequence):
+                    assigned.add(best_emp)
             
-            if success:
-                assigned.add(best_emp)
-                unassigned.remove(best_emp)
-            else:
-                # Should not happen if logic is correct, but safety valve
-                pass
+            unassigned.remove(best_emp)
         
         return assigned
-
-    # ... [Rest of the helper methods remain exactly the same] ...
+    
     def _get_insertion_options(self, solution: 'Solution', eid: str) -> List[Tuple]:
-        # (Same as original code)
+        """
+        Get all feasible insertion options for an employee.
+        Returns list of (objective, schedule_idx, trip_idx, is_new_trip, sequence)
+        """
         options = []
         emp = self.employees[eid]
         
         for sched_idx, schedule in enumerate(solution.schedules):
             vehicle = schedule.vehicle
-            if vehicle.category.lower() not in emp.allowed_vehicle_types: continue
             
-            # Try existing trips
+            # CONSTRAINT 3: Check vehicle type
+            if vehicle.category.lower() not in emp.allowed_vehicle_types:
+                continue
+            
+            # Try inserting into existing trips
             for trip_idx, trip in enumerate(schedule.trips):
                 test_emps = trip.employees + [eid]
+                
+                # CONSTRAINT 2: Check capacity & sharing
                 cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, test_emps)
-                if not cap_ok: continue
+                if not cap_ok:
+                    continue
                 
+                # CONSTRAINT 3: Check vehicle type for combined group
                 type_ok, _ = self.constraints.check_vehicle_type(vehicle, test_emps)
-                if not type_ok: continue
+                if not type_ok:
+                    continue
                 
+                # Find best sequence satisfying CONSTRAINT 1
                 best_seq = self.constraints.find_best_sequence(
                     vehicle, test_emps, trip.start_time, trip.start_location
                 )
-                if not best_seq: continue
+                
+                if not best_seq:
+                    continue
                 
                 time_ok, details = self.constraints.check_time_constraint(
                     vehicle, test_emps, best_seq, trip.start_time, trip.start_location
@@ -842,31 +885,40 @@ class InitialSolutionBuilder:
                     objective = self._compute_objective(details, vehicle)
                     options.append((objective, sched_idx, trip_idx, False, best_seq))
             
-            # Try new trip
+            # Try creating new trip on this vehicle
             start_time, start_loc = self._get_next_trip_start(schedule)
-            cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
-            if not cap_ok: continue
             
+            # CONSTRAINT 2: Check capacity
+            cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
+            if not cap_ok:
+                continue
+            
+            # CONSTRAINT 1: Check time
             time_ok, details = self.constraints.check_time_constraint(
                 vehicle, [eid], [eid], start_time, start_loc
             )
             
             if time_ok:
                 objective = self._compute_objective(details, vehicle)
-                objective *= 1.05 # Penalty for new trip
+                # Small penalty for new trip to prefer consolidation
+                objective *= 1.05
                 options.append((objective, sched_idx, -1, True, [eid]))
-                
+        
         return options
-
+    
     def _compute_objective(self, details: Dict, vehicle) -> float:
+        """Compute objective: α·cost + β·time"""
         total_distance = details.get('total_distance', 0)
         start_time = details.get('start_time', 0)
         arrival_at_office = details.get('arrival_at_office', start_time)
+        
         cost = total_distance * vehicle.cost_per_km
         time_val = arrival_at_office - start_time
+        
         return self.alpha * cost + self.beta * time_val
-
+    
     def _get_next_trip_start(self, schedule: 'VehicleSchedule') -> Tuple[float, 'Location']:
+        """Get start time and location for next trip on this vehicle."""
         if schedule.trips:
             last_trip = schedule.trips[-1]
             start_time = last_trip.arrival_at_office + self.constraints.DROP_TIME
@@ -875,48 +927,81 @@ class InitialSolutionBuilder:
             start_time = schedule.vehicle.available_from
             start_loc = schedule.vehicle.start_location
         return start_time, start_loc
-
+    
     def _can_create_route(self, solution: 'Solution', emp_ids: List[str], vid: str) -> bool:
+        """Check if we can create a route for these employees on this vehicle."""
         vehicle = self.vehicles[vid]
-        schedule = next((s for s in solution.schedules if s.vehicle.id == vid), None)
-        if not schedule: return False
+        
+        # Find the schedule for this vehicle
+        schedule = None
+        for s in solution.schedules:
+            if s.vehicle.id == vid:
+                schedule = s
+                break
+        
+        if not schedule:
+            return False
         
         start_time, start_loc = self._get_next_trip_start(schedule)
         
+        # Check all constraints
         cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, emp_ids)
-        if not cap_ok: return False
+        if not cap_ok:
+            return False
         
         type_ok, _ = self.constraints.check_vehicle_type(vehicle, emp_ids)
-        if not type_ok: return False
+        if not type_ok:
+            return False
         
         best_seq = self.constraints.find_best_sequence(vehicle, emp_ids, start_time, start_loc)
-        if not best_seq: return False
+        if not best_seq:
+            return False
         
         time_ok, _ = self.constraints.check_time_constraint(
             vehicle, emp_ids, best_seq, start_time, start_loc
         )
+        
         return time_ok
-
+    
     def _create_trip(self, solution: 'Solution', emp_ids: List[str], 
                      vid: str, sequence: List[str] = None) -> bool:
+        """Create a new trip with the given employees."""
         vehicle = self.vehicles[vid]
-        schedule = next((s for s in solution.schedules if s.vehicle.id == vid), None)
-        if not schedule: return False
+        
+        # Find schedule
+        schedule = None
+        for s in solution.schedules:
+            if s.vehicle.id == vid:
+                schedule = s
+                break
+        
+        if not schedule:
+            return False
         
         start_time, start_loc = self._get_next_trip_start(schedule)
         
+        # Find best sequence if not provided
         if not sequence:
             sequence = self.constraints.find_best_sequence(
                 vehicle, emp_ids, start_time, start_loc
             )
-        if not sequence: return False
         
+        if not sequence:
+            return False
+        
+        # Verify constraints one more time
         time_ok, details = self.constraints.check_time_constraint(
             vehicle, emp_ids, sequence, start_time, start_loc
         )
         
-        if not time_ok or 'arrival_at_office' not in details: return False
+        # FIX: Verify we have all required details
+        if not time_ok:
+            return False
         
+        if 'arrival_at_office' not in details:
+            return False
+        
+        # Create trip
         trip = Trip(
             vehicle_id=vid,
             employees=emp_ids.copy(),
@@ -925,25 +1010,37 @@ class InitialSolutionBuilder:
             start_location=start_loc,
             arrival_at_office=details['arrival_at_office'],
             pickup_times=details.get('pickup_times', {}),
-            distance_km=details.get('total_distance', 0)
+            distance_km=details.get('total_distance', 0),
+            route=details.get('route', [])
         )
         
         schedule.trips.append(trip)
         return True
-
+    
     def _create_trip_for_employee(self, solution: 'Solution', eid: str, sched_idx: int) -> bool:
+        """Create a new trip for a single employee on the given schedule."""
         schedule = solution.schedules[sched_idx]
         vehicle = schedule.vehicle
+        
         start_time, start_loc = self._get_next_trip_start(schedule)
         
+        # Verify all constraints
         cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
         type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
-        if not (cap_ok and type_ok): return False
+        
+        if not (cap_ok and type_ok):
+            return False
         
         time_ok, details = self.constraints.check_time_constraint(
             vehicle, [eid], [eid], start_time, start_loc
         )
-        if not time_ok or 'arrival_at_office' not in details: return False
+        
+        # FIX: Verify we have all required details
+        if not time_ok:
+            return False
+        
+        if 'arrival_at_office' not in details:
+            return False
         
         trip = Trip(
             vehicle_id=vehicle.id,
@@ -953,51 +1050,76 @@ class InitialSolutionBuilder:
             start_location=start_loc,
             arrival_at_office=details['arrival_at_office'],
             pickup_times=details.get('pickup_times', {}),
-            distance_km=details.get('total_distance', 0)
+            distance_km=details.get('total_distance', 0),
+            route=details.get('route', [])
         )
+        
         schedule.trips.append(trip)
         return True
-
+    
     def _insert_into_trip(self, solution: 'Solution', eid: str, 
                           sched_idx: int, trip_idx: int, sequence: List[str]) -> bool:
+        """Insert employee into existing trip."""
         schedule = solution.schedules[sched_idx]
         trip = schedule.trips[trip_idx]
         vehicle = schedule.vehicle
+        
         new_emps = trip.employees + [eid]
         
+        # Verify all constraints
         cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, new_emps)
         type_ok, _ = self.constraints.check_vehicle_type(vehicle, new_emps)
-        if not (cap_ok and type_ok): return False
+        
+        if not (cap_ok and type_ok):
+            return False
         
         time_ok, details = self.constraints.check_time_constraint(
             vehicle, new_emps, sequence, trip.start_time, trip.start_location
         )
-        if not time_ok or 'arrival_at_office' not in details: return False
         
+        if not time_ok:
+            return False
+        
+        # FIX: Verify details has required keys before updating
+        if 'arrival_at_office' not in details:
+            return False
+        
+        # Update trip
         trip.employees = new_emps
         trip.pickup_sequence = sequence
         trip.arrival_at_office = details['arrival_at_office']
         trip.pickup_times = details.get('pickup_times', {})
         trip.distance_km = details.get('total_distance', 0)
+        trip.route = details.get('route', [])
         
+        # Update subsequent trips' start times (only if there are more trips)
         if trip_idx + 1 < len(schedule.trips):
             self._update_subsequent_trips(schedule, trip_idx + 1)
         
         return True
-
+    
     def _assign_to_new_trip(self, solution: 'Solution', eid: str) -> bool:
+        """Try to assign employee to a new trip on any compatible vehicle."""
         emp = self.employees[eid]
+        
         best_objective = float('inf')
         best_sched_idx = None
         
         for sched_idx, schedule in enumerate(solution.schedules):
             vehicle = schedule.vehicle
-            if vehicle.category.lower() not in emp.allowed_vehicle_types: continue
+            
+            # Check vehicle type
+            if vehicle.category.lower() not in emp.allowed_vehicle_types:
+                continue
             
             start_time, start_loc = self._get_next_trip_start(schedule)
+            
+            # Check all constraints
             cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
             type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
-            if not (cap_ok and type_ok): continue
+            
+            if not (cap_ok and type_ok):
+                continue
             
             time_ok, details = self.constraints.check_time_constraint(
                 vehicle, [eid], [eid], start_time, start_loc
@@ -1011,9 +1133,11 @@ class InitialSolutionBuilder:
         
         if best_sched_idx is not None:
             return self._create_trip_for_employee(solution, eid, best_sched_idx)
+        
         return False
-
+    
     def _update_subsequent_trips(self, schedule: 'VehicleSchedule', start_idx: int):
+        """Update start times for all trips from start_idx onwards."""
         for i in range(start_idx, len(schedule.trips)):
             if i == 0:
                 prev_end = schedule.vehicle.available_from
@@ -1024,21 +1148,31 @@ class InitialSolutionBuilder:
             trip.start_time = prev_end
             trip.start_location = self.office if i > 0 else schedule.vehicle.start_location
             
+            # Recalculate trip details
             time_ok, details = self.constraints.check_time_constraint(
                 schedule.vehicle, trip.employees, trip.pickup_sequence,
                 trip.start_time, trip.start_location
             )
             
+            # FIX: Safely access details with defaults (details always has these keys)
             if 'arrival_at_office' in details:
                 trip.arrival_at_office = details['arrival_at_office']
             if 'pickup_times' in details:
                 trip.pickup_times = details['pickup_times']
             if 'total_distance' in details:
                 trip.distance_km = details['total_distance']
+            if 'route' in details:
+                trip.route = details['route']
     
-    # ... [Phase 3 and Final Validation methods remain exactly the same] ...
+    # =========================================================================
+    # PHASE III: MULTI-TRIP CONSOLIDATION
+    # =========================================================================
+    
     def _phase3_consolidation(self, solution: 'Solution') -> 'Solution':
-        # (Same as original code)
+        """
+        Phase III: Multi-Trip Consolidation
+        Try to merge trips on same vehicle while respecting constraints.
+        """
         improved = True
         max_iterations = 50
         iteration = 0
@@ -1048,131 +1182,234 @@ class InitialSolutionBuilder:
             iteration += 1
             
             for schedule in solution.schedules:
-                if len(schedule.trips) < 2: continue
+                if len(schedule.trips) < 2:
+                    continue
+                
                 i = 0
                 while i < len(schedule.trips) - 1:
                     trip_i = schedule.trips[i]
                     trip_j = schedule.trips[i + 1]
+                    
+                    # Try to merge
                     if self._can_merge_trips(schedule, trip_i, trip_j):
                         self._merge_trips(schedule, i)
                         improved = True
+                        # Don't increment i - check same position again
                     else:
                         i += 1
+        
         return solution
-
-    def _can_merge_trips(self, schedule: 'VehicleSchedule', trip_i: 'Trip', trip_j: 'Trip') -> bool:
+    
+    def _can_merge_trips(self, schedule: 'VehicleSchedule', 
+                          trip_i: 'Trip', trip_j: 'Trip') -> bool:
+        """Check if two consecutive trips can be merged."""
         vehicle = schedule.vehicle
         combined_emps = trip_i.employees + trip_j.employees
+        
+        # CONSTRAINT 2: Check capacity & sharing
         cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, combined_emps)
-        if not cap_ok: return False
+        if not cap_ok:
+            return False
+        
+        # CONSTRAINT 3: Check vehicle type
         type_ok, _ = self.constraints.check_vehicle_type(vehicle, combined_emps)
-        if not type_ok: return False
+        if not type_ok:
+            return False
+        
+        # Find best sequence satisfying CONSTRAINT 1
         best_seq = self.constraints.find_best_sequence(
             vehicle, combined_emps, trip_i.start_time, trip_i.start_location
         )
-        if not best_seq: return False
+        
+        if not best_seq:
+            return False
+        
         time_ok, _ = self.constraints.check_time_constraint(
             vehicle, combined_emps, best_seq, trip_i.start_time, trip_i.start_location
         )
+        
         return time_ok
-
+    
     def _merge_trips(self, schedule: 'VehicleSchedule', trip_idx: int):
+        """Merge trip at trip_idx with trip at trip_idx+1."""
         trip_i = schedule.trips[trip_idx]
         trip_j = schedule.trips[trip_idx + 1]
         vehicle = schedule.vehicle
+        
         combined_emps = trip_i.employees + trip_j.employees
+        
         best_seq = self.constraints.find_best_sequence(
             vehicle, combined_emps, trip_i.start_time, trip_i.start_location
         )
+        
         _, details = self.constraints.check_time_constraint(
             vehicle, combined_emps, best_seq, trip_i.start_time, trip_i.start_location
         )
+        
+        # Update trip_i with merged data
         trip_i.employees = combined_emps
         trip_i.pickup_sequence = best_seq
         trip_i.arrival_at_office = details['arrival_at_office']
         trip_i.pickup_times = details['pickup_times']
         trip_i.distance_km = details['total_distance']
+        trip_i.route = details['route']
+        
+        # Remove trip_j
         schedule.trips.remove(trip_j)
+        
+        # Update subsequent trips
         self._update_subsequent_trips(schedule, trip_idx + 1)
-
+    
+    # =========================================================================
+    # FINAL VALIDATION
+    # =========================================================================
+    
     def _final_validation(self, solution: 'Solution') -> 'Solution':
-        # (Same as original code)
+        """
+        Final validation pass - ensure all constraints are satisfied.
+        Remove any violating trips and try to reassign those employees.
+        """
         removed_employees = []
+        
         for schedule in solution.schedules:
             valid_trips = []
             current_time = schedule.vehicle.available_from
             current_loc = schedule.vehicle.start_location
+            
             for trip in schedule.trips:
+                # Update start time based on actual position
                 trip.start_time = current_time
                 trip.start_location = current_loc
+                
+                # Verify ALL constraints
                 feasible, details = self.constraints.is_trip_feasible(
                     schedule.vehicle, trip.employees, trip.pickup_sequence,
                     trip.start_time, trip.start_location
                 )
+                
                 if feasible:
+                    # FIX: Safely access nested details
                     time_details = details.get('time', {})
+                    
                     if 'arrival_at_office' in time_details:
                         trip.arrival_at_office = time_details['arrival_at_office']
                     if 'pickup_times' in time_details:
                         trip.pickup_times = time_details['pickup_times']
                     if 'total_distance' in time_details:
                         trip.distance_km = time_details['total_distance']
+                    if 'route' in time_details:
+                        trip.route = time_details['route']
+                    
                     valid_trips.append(trip)
                     current_time = trip.arrival_at_office + self.constraints.DROP_TIME
                     current_loc = self.office
                 else:
+                    # Trip violates constraints - remove employees for reassignment
                     removed_employees.extend(trip.employees)
+            
             schedule.trips = valid_trips
+        
+        # Try to reassign removed employees
         for eid in removed_employees:
             self._assign_to_best_trip(solution, eid)
+        
         return solution
-
+    
+    # =========================================================================
+    # METHOD REQUIRED BY ALNS REPAIR OPERATORS
+    # =========================================================================
+    
     def _assign_to_best_trip(self, sol: 'Solution', eid: str) -> bool:
-        # (Same as original code)
+        """
+        Assign employee to best feasible trip.
+        Used by ALNS repair operators and final validation.
+        """
         emp = self.employees[eid]
         best_objective = float('inf')
-        best_option = None
+        best_option = None  # (sched_idx, trip_idx, is_new, sequence)
+        
         for sched_idx, schedule in enumerate(sol.schedules):
             vehicle = schedule.vehicle
-            if vehicle.category.lower() not in emp.allowed_vehicle_types: continue
             
+            # CONSTRAINT 3: Check vehicle type
+            if vehicle.category.lower() not in emp.allowed_vehicle_types:
+                continue
+            
+            # Try existing trips
             for trip_idx, trip in enumerate(schedule.trips):
                 test_emps = trip.employees + [eid]
+                
+                # CONSTRAINT 2: Check capacity & sharing
                 cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, test_emps)
-                if not cap_ok: continue
+                if not cap_ok:
+                    continue
+                
+                # CONSTRAINT 3: Check vehicle type for group
                 type_ok, _ = self.constraints.check_vehicle_type(vehicle, test_emps)
-                if not type_ok: continue
+                if not type_ok:
+                    continue
+                
+                # Find sequence satisfying CONSTRAINT 1
                 best_seq = self.constraints.find_best_sequence(
                     vehicle, test_emps, trip.start_time, trip.start_location
                 )
-                if not best_seq: continue
+                
+                if not best_seq:
+                    continue
+                
                 time_ok, details = self.constraints.check_time_constraint(
                     vehicle, test_emps, best_seq, trip.start_time, trip.start_location
                 )
+                
+                # FIX: Verify we have valid details
                 if time_ok and 'arrival_at_office' in details and 'total_distance' in details:
                     objective = self._compute_objective(details, vehicle)
-                    objective *= 0.9
+                    objective *= 0.9  # Bonus for consolidation
+                    
                     if objective < best_objective:
                         best_objective = objective
                         best_option = (sched_idx, trip_idx, False, best_seq)
             
+            # Try new trip
             start_time, start_loc = self._get_next_trip_start(schedule)
+            
             cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
             type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
+            
             if cap_ok and type_ok:
                 time_ok, details = self.constraints.check_time_constraint(
                     vehicle, [eid], [eid], start_time, start_loc
                 )
+                
+                # FIX: Verify we have valid details
                 if time_ok and 'arrival_at_office' in details and 'total_distance' in details:
                     objective = self._compute_objective(details, vehicle)
+                    
                     if objective < best_objective:
                         best_objective = objective
                         best_option = (sched_idx, -1, True, [eid])
-                        
-        if best_option is None: return False
+        
+        if best_option is None:
+            return False
+        
         sched_idx, trip_idx, is_new, sequence = best_option
-        if is_new: return self._create_trip_for_employee(sol, eid, sched_idx)
-        else: return self._insert_into_trip(sol, eid, sched_idx, trip_idx, sequence)
+        
+        if is_new:
+            return self._create_trip_for_employee(sol, eid, sched_idx)
+        else:
+            return self._insert_into_trip(sol, eid, sched_idx, trip_idx, sequence)
+    
+    def _calculate_solution_cost(self, solution: 'Solution') -> float:
+        """Calculate total objective for solution (for compatibility)."""
+        total_cost = 0.0
+        total_time = 0.0
+        
+        for schedule in solution.schedules:
+            for trip in schedule.trips:
+                total_cost += trip.distance_km * schedule.vehicle.cost_per_km
+                total_time += trip.arrival_at_office - trip.start_time
+        
+        return self.alpha * total_cost + self.beta * total_time
 
 # =============================================================================
 # DESTROY / REPAIR OPERATORS
@@ -1709,7 +1946,6 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
         verifier.print_results(results)
     
     return results
-
 
 if __name__ == "__main__":
     import sys
