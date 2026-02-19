@@ -206,7 +206,11 @@ class DataLoader:
         base_df = pd.read_excel(filepath, sheet_name='baseline')
 
         sum_baseline = base_df['baseline_cost'].sum()
-        time_baseline = base_df['baseline_time_min'].sum() if 'baseline_time_min' in base_df.columns else 0
+        time_baseline = 0
+        if 'baseline_time_min' in base_df.columns:
+            time_baseline = base_df['baseline_time_min'].sum() 
+        elif 'baseline_time' in base_df.columns:
+            time_baseline = base_df['baseline_time'].sum() 
         
         # Try to load metadata
         metadata = {'alpha': 0.7, 'beta': 0.3}
@@ -238,7 +242,7 @@ class DataLoader:
         for _, r in base_df.iterrows():
             eid = r['employee_id']
             # safely get time, assuming column might be 'baseline_time', 'time', or 'baseline_travel_time'
-            b_time = r.get('baseline_time', r.get('time', r.get('baseline_travel_time', 0)))
+            b_time = r.get('baseline_time', r.get('time', r.get('baseline_travel_time', r.get('baseline_time_min', 0))))
             
             baseline_data[eid] = {
                 'cost': float(r['baseline_cost']),
@@ -1760,6 +1764,7 @@ class ResultsVerifier:
             'vehicles_used': breakdown['vehicles_used'],
             'total_distance_km': round(breakdown['total_distance'], 2),
             'travel_cost': round(breakdown['travel_cost'], 2),
+            'total_time': round(breakdown['total_time'], 2),
             'objective': round(breakdown['objective'], 2),
             'alpha': round(self.state.alpha, 2),
             'beta': 1 - round(self.state.alpha, 2),
@@ -1855,6 +1860,7 @@ class ResultsVerifier:
         print(f"\n   Objective Weights:  α={s['alpha']}, β={s['beta']}")
         print(f"   Total Distance:     {s['total_distance_km']:.2f} km")
         print(f"   Travel Cost:        ₹{s['travel_cost']:.2f}")
+        print(f"   Total Time:         {s['total_time']:.2f} min")
         print(f"   Objective Value:    {s['objective']:.2f}")
         print(f"   Baseline Cost:      ₹{s['baseline_cost']:.2f}")
         # --- MODIFIED: Print the new weighted baseline ---

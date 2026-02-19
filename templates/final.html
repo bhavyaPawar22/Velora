@@ -360,11 +360,7 @@ canvas {
     <div class="kpi-card">
         <h4>Assigned</h4>
         <h2>{{ data.summary.employees_assigned }}</h2>
-    </div>    
-    <div class="kpi-card">
-        <h4>Total Trips</h4>
-        <h2>{{ data.summary.total_trips }}</h2>
-    </div>
+    </div> 
     <div class="kpi-card">
         <h4>Vehicles Used</h4>
         <h2>{{ data.summary.vehicles_used }}</h2>
@@ -372,6 +368,10 @@ canvas {
     <div class="kpi-card">
         <h4>Total Distance</h4>
         <h2>{{ data.summary.total_distance_km | round(2) }} km</h2>
+    </div>
+    <div class="kpi-card">
+        <h4>Optimized Time</h4>
+        <h2>{{ data.summary.total_time | round(2) }} min</h2>
     </div>
     <div class="kpi-card">
         <h4>Optimized Cost</h4>
