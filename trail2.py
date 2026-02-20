@@ -1805,6 +1805,10 @@ class ResultsVerifier:
                 },
                 'trips': []
             }
+
+            cost = 0
+            time = 0
+            dist = 0
             
             for i, trip in enumerate(schedule.trips):
                 feasible, details = self.constraints.is_trip_feasible(
@@ -1820,6 +1824,10 @@ class ResultsVerifier:
                     results['employees'][emp]['pickup_time'] = self._fmt_time(trip.pickup_times[emp])
                     results['employees'][emp]['dropoff_time'] = self._fmt_time(trip.arrival_at_office)
                 
+                dist += trip.distance_km
+                cost += trip.distance_km * schedule.vehicle.cost_per_km
+                time += trip.arrival_at_office - trip.start_time
+
                 trip_info = {
                     'trip_number': i + 1,
                     'employees': trip.employees,
@@ -1840,6 +1848,9 @@ class ResultsVerifier:
                 
                 sched_info['trips'].append(trip_info)
             
+            sched_info['vehicle']['cost'] = cost
+            sched_info['vehicle']['time'] = time
+            sched_info['vehicle']['distance'] = dist
             results['vehicle_schedules'].append(sched_info)
         
         return results

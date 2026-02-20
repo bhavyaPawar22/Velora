@@ -356,6 +356,45 @@ canvas {
     background: transparent;
     border: none;
 }
+
+/* ================= CUSTOM MARKERS ================= */
+
+.custom-marker {
+    background: none;
+    border: none;
+}
+
+.marker {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-size: 14px;
+    box-shadow: 0 0 12px rgba(79,124,255,0.6);
+    transition: 0.3s ease;
+}
+
+.marker:hover {
+    transform: scale(1.15);
+}
+
+/* Office */
+.office-marker {
+    background: linear-gradient(135deg,#22c55e,#16a34a);
+}
+
+/* Employee */
+.employee-marker {
+    background: linear-gradient(135deg,#4f7cff,#8b5cf6);
+}
+
+/* Depot */
+.depot-marker {
+    background: linear-gradient(135deg,#ff9500,#ff6b00);
+}
 </style>
 </head>
 <body>
@@ -545,7 +584,7 @@ canvas {
 <td>
     <span class="route-office">{{ ns.curr }}</span>
     <span class="route-arrow">→</span>
-    {% for emp in trip.employees %}
+    {% for emp in trip.pickup_sequence %}
         <span class="route-pill">{{ emp }}</span>
         <span class="route-arrow">→</span>
     {% endfor %}
@@ -568,7 +607,7 @@ canvas {
                 <th>Pickup Time</th>
             </tr>
 
-            {% for emp in trip.employees %}
+            {% for emp in trip.pickup_sequence %}
             <tr>
                 <td>{{ loop.index }}</td>
                 <td>{{ emp }}</td>
@@ -604,6 +643,35 @@ const pie_colors = {{ pie_colors|tojson }};
 const office = data.Office;
 let maps = {};
 let routes = {};
+
+// ================= CUSTOM ICONS =================
+
+const officeIcon = L.divIcon({
+    className: "custom-marker",
+    html: `<div class="marker office-marker">
+              <i class="fa fa-building"></i>
+           </div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 30]
+});
+
+const employeeIcon = L.divIcon({
+    className: "custom-marker",
+    html: `<div class="marker employee-marker">
+              <i class="fa fa-user"></i>
+           </div>`,
+    iconSize: [26, 26],
+    iconAnchor: [13, 26]
+});
+
+const depotIcon = L.divIcon({
+    className: "custom-marker",
+    html: `<div class="marker depot-marker">
+              <i class="fa fa-car"></i>
+           </div>`,
+    iconSize: [28, 28],
+    iconAnchor: [14, 28]
+});
 
 function showPane(id,btn){
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
@@ -675,7 +743,7 @@ data.vehicle_schedules.forEach((vehicle,index)=>{
     routes[vehicle.vehicle.id] = {};
     
     const start = vehicle.vehicle.start_location.replace(/[()]/g,"").split(",");
-    let depotMarker = L.marker([parseFloat(start[0]), parseFloat(start[1])])
+    let depotMarker = L.marker([parseFloat(start[0]), parseFloat(start[1])], { icon: depotIcon })
     .addTo(map);
     depotMarker.bindTooltip(`
         <div class="map-tooltip">
@@ -689,7 +757,7 @@ data.vehicle_schedules.forEach((vehicle,index)=>{
         sticky: true
     });
     
-    let officeMarker = L.marker([office[0], office[1]])
+    let officeMarker = L.marker([office[0], office[1]], { icon: officeIcon })
     .addTo(map);
     officeMarker.bindTooltip(`
         <div class="map-tooltip">
@@ -716,7 +784,7 @@ data.vehicle_schedules.forEach((vehicle,index)=>{
         
         trip.employees.forEach(emp=>{
             let point = data.employees[emp].pickup;
-            let emp_marker = L.marker([point.lat, point.lng]).addTo(map);
+            let emp_marker = L.marker([point.lat, point.lng], { icon: employeeIcon }).addTo(map);
             emp_marker.bindTooltip(`
                 <div class="map-tooltip">
                     <strong>Employee:</strong> ${emp}<br>
