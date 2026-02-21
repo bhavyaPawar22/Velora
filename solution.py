@@ -24,7 +24,6 @@ from typing import List, Dict, Tuple, Optional, Set
 from enum import Enum
 from itertools import permutations
 import mapgraph as mp
-test_case_path = "TestCases/TestCase_TC01.xlsx"
 
 # =============================================================================
 # ENUMS AND DATA CLASSES
@@ -62,11 +61,11 @@ class Location:
     lat: float
     lng: float
     
-    def distance_to(self, other: 'Location') -> float:
+    def distance_to(self, other: 'Location') -> Tuple[float, List[Any]]:
         src = mp.nearest_node((self.lat, self.lng))
         dst = mp.nearest_node((other.lat, other.lng))
         route, len = mp.optimal_route(src, dst)
-        return len
+        return len, route
     
     def __repr__(self):
         return f"({self.lat:.4f}, {self.lng:.4f})"
@@ -83,6 +82,7 @@ class Employee:
     vehicle_preference: VehiclePreference
     sharing_preference: SharingPreference
     baseline_cost: float = 0.0
+    baseline_time: float = 0.0
     
     @property
     def max_passengers(self) -> int:
@@ -121,6 +121,7 @@ class Trip:
     arrival_at_office: float = 0.0
     pickup_times: Dict[str, float] = field(default_factory=dict)
     distance_km: float = 0.0
+    route: List[Tuple[float]] = field(default_factory=list)
     
     def copy(self) -> 'Trip':
         return Trip(
@@ -131,7 +132,8 @@ class Trip:
             start_location=self.start_location,
             arrival_at_office=self.arrival_at_office,
             pickup_times=self.pickup_times.copy(),
-            distance_km=self.distance_km
+            distance_km=self.distance_km,
+            route=self.route
         )
 
 
@@ -183,7 +185,7 @@ class Solution:
 # =============================================================================
 # DATA LOADER (with metadata support)
 # =============================================================================
-
+from typing import List, Tuple, Dict, Any
 class DataLoader:
     @staticmethod
     def parse_time(val) -> float:
@@ -198,11 +200,18 @@ class DataLoader:
         return 480.0
     
     @staticmethod
-    def load(filepath: str) -> Tuple[List[Employee], List[Vehicle], Location, Dict]:
+    def load(filepath: str) -> Tuple[List[Any], List[Any], Any, Dict]:
         """Load data and return employees, vehicles, office, and metadata"""
         emp_df = pd.read_excel(filepath, sheet_name='employees')
         veh_df = pd.read_excel(filepath, sheet_name='vehicles')
         base_df = pd.read_excel(filepath, sheet_name='baseline')
+
+        sum_baseline = base_df['baseline_cost'].sum()
+        time_baseline = 0
+        if 'baseline_time_min' in base_df.columns:
+            time_baseline = base_df['baseline_time_min'].sum() 
+        elif 'baseline_time' in base_df.columns:
+            time_baseline = base_df['baseline_time'].sum() 
         
         # Try to load metadata
         metadata = {'alpha': 0.7, 'beta': 0.3}
@@ -213,7 +222,7 @@ class DataLoader:
                 value = row.get('value', row.get('val'))
 
                 if pd.notna(value):
-                    # 2. Map the specific Excel keys to alpha and beta
+                    # Map the specific Excel keys to alpha and beta
                     if key in ['alpha', 'objective_cost_weight']:
                         metadata['alpha'] = float(value)
                     elif key in ['beta', 'objective_time_weight']:
@@ -224,13 +233,34 @@ class DataLoader:
         except Exception as e:
             print(f"No metadata sheet found, using defaults (alpha=0.7, beta=0.3)")
         
-        baseline = {r['employee_id']: r['baseline_cost'] for _, r in base_df.iterrows()}
+        # --- MODIFIED SECTION START ---
+        # Load both baseline cost and baseline time
+        baseline_data = {}
+
+        metadata['sum_baseline_cost'] = sum_baseline
+        metadata['sum_baseline_time'] = time_baseline
+
+        for _, r in base_df.iterrows():
+            eid = r['employee_id']
+            # safely get time, assuming column might be 'baseline_time', 'time', or 'baseline_travel_time'
+            b_time = r.get('baseline_time', r.get('time', r.get('baseline_travel_time', r.get('baseline_time_min', 0))))
+            
+            baseline_data[eid] = {
+                'cost': float(r['baseline_cost']),
+                'time': float(b_time)
+            }
+        # --- MODIFIED SECTION END ---
+
         office = Location(emp_df['drop_lat'].iloc[0], emp_df['drop_lng'].iloc[0])
         
         employees = []
         for _, r in emp_df.iterrows():
             vp = r['vehicle_preference'].lower()
             sp = r['sharing_preference'].lower()
+            
+            # Get baseline info
+            b_info = baseline_data.get(r['employee_id'], {'cost': 0, 'time': 0})
+            
             emp = Employee(
                 id=r['employee_id'],
                 priority=int(r['priority']),
@@ -240,8 +270,14 @@ class DataLoader:
                 latest_drop=DataLoader.parse_time(r['latest_drop']),
                 vehicle_preference=VehiclePreference(vp) if vp in ['premium','normal','any'] else VehiclePreference.ANY,
                 sharing_preference=SharingPreference(sp) if sp in ['single','double','triple'] else SharingPreference.TRIPLE,
-                baseline_cost=baseline.get(r['employee_id'], 0)
+                baseline_cost=b_info['cost'],
+                baseline_time=b_info['time']
             )
+            
+            # --- MODIFIED: Attach the calculated weighted baseline value ---
+            # Value = (alpha * baseline_cost) + (beta * baseline_time)
+            emp.baseline_value = (metadata['alpha'] * b_info['cost']) + (metadata['beta'] * b_info['time'])
+            
             employees.append(emp)
         
         vehicles = []
@@ -260,7 +296,7 @@ class DataLoader:
             vehicles.append(veh)
         
         return employees, vehicles, office, metadata
-
+    
 
 # =============================================================================
 # CONSTRAINT CHECKER
@@ -276,14 +312,14 @@ class TripConstraints:
         self.office = office
         self._dist_cache = {}
     
-    def distance(self, a: Location, b: Location) -> float:
+    def distance(self, a: Location, b: Location) -> Tuple[float, List[Any]]:
         key = (a.lat, a.lng, b.lat, b.lng)
         if key not in self._dist_cache:
             self._dist_cache[key] = a.distance_to(b)
         return self._dist_cache[key]
     
     def travel_time(self, a: Location, b: Location, speed: float) -> float:
-        return (self.distance(a, b) / speed) * 60
+        return (self.distance(a, b)[0] / speed) * 60
     
     def check_time_constraint(self, vehicle: Vehicle, employee_ids: List[str],
                                pickup_sequence: List[str], start_time: float,
@@ -297,13 +333,15 @@ class TripConstraints:
         current_loc = start_location
         pickup_times = {}
         total_dist = 0.0
+        final_route = []
         
         for eid in pickup_sequence:
             emp = self.employees[eid]
             
-            dist = self.distance(current_loc, emp.pickup)
+            dist, route = self.distance(current_loc, emp.pickup)
             travel = self.travel_time(current_loc, emp.pickup, vehicle.avg_speed)
             total_dist += dist
+            final_route += route[:-1]
             
             arrival_at_pickup = current_time + travel
             actual_pickup = max(arrival_at_pickup, emp.earliest_pickup)
@@ -312,9 +350,10 @@ class TripConstraints:
             current_time = actual_pickup + self.SERVICE_TIME
             current_loc = emp.pickup
         
-        dist = self.distance(current_loc, self.office)
+        dist, route = self.distance(current_loc, self.office)
         travel = self.travel_time(current_loc, self.office, vehicle.avg_speed)
         total_dist += dist
+        final_route += route
         arrival_at_office = current_time + travel
         
         is_feasible = arrival_at_office <= deadline
@@ -326,6 +365,7 @@ class TripConstraints:
             'slack': deadline - arrival_at_office,
             'pickup_times': pickup_times,
             'total_distance': total_dist,
+            'route': final_route,
             'start_time': start_time,
             'start_location': str(start_location)
         }
@@ -438,29 +478,47 @@ class ProblemState:
         self.metadata = metadata if metadata else {}
         self.alpha = self.metadata.get('alpha', 0.7)
         self.beta = self.metadata.get('beta', 0.3)
+
+        self.sum_baseline_cost = self.metadata.get('sum_baseline_cost', 1.0)
+        self.sum_baseline_time = self.metadata.get('sum_baseline_time', 1.0)
     
     def solution_cost(self, sol: Solution) -> Tuple[float, Dict]:
         """Calculate weighted objective: alpha * cost + beta * time"""
         total_cost = 0.0
         total_dist = 0.0
         total_time = 0.0
-        
+        num_assigned = 0
+        num_vehicles = 0
+        num_trips = 0
+        assigned = {emp: False for emp in self.employees}
+
         for schedule in sol.schedules:
+            if schedule.trips:
+                num_vehicles += 1
             for trip in schedule.trips:
+                num_trips += 1
+                for emp in trip.employees:
+                    assigned[emp] = True
+                    num_assigned += 1
                 total_dist += trip.distance_km
                 total_cost += trip.distance_km * schedule.vehicle.cost_per_km
                 total_time += trip.arrival_at_office - trip.start_time
         
-        objective = self.alpha * total_cost + self.beta * total_time
+        for emp in self.employees:
+            if not assigned[emp]:
+                total_cost += self.employees[emp].baseline_cost
+                total_time += self.employees[emp].baseline_time
+
+        objective = self.alpha * total_cost / self.sum_baseline_cost + self.beta * total_time / self.sum_baseline_time
         
         return objective, {
             'objective': objective,
             'travel_cost': total_cost,
             'total_distance': total_dist,
             'total_time': total_time,
-            'vehicles_used': sum(1 for s in sol.schedules if s.trips),
-            'total_trips': sol.total_trips(),
-            'served': len(sol.all_assigned())
+            'vehicles_used': num_vehicles,
+            'total_trips': num_trips,
+            'served': num_assigned
         }
 
 
@@ -468,190 +526,370 @@ class ProblemState:
 # CONSTRAINT-FIRST INITIAL SOLUTION BUILDER
 # =============================================================================
 
+
 @dataclass
-class EmployeeFeasibility:
-    """Tracks feasible assignment options for an employee"""
-    employee_id: str
-    priority: int
-    deadline: float
-    earliest_pickup: float
-    feasible_options: List[Tuple[str, int, float, float]] = field(default_factory=list)
-    num_options: int = 0
-    is_critical: bool = False
-    
-    def analyze(self):
-        self.num_options = len(self.feasible_options)
-        self.is_critical = self.num_options <= 2 or (self.deadline - self.earliest_pickup) < 60
+class SavingsEntry:
+    """Represents savings from merging two employees"""
+    employee_i: str
+    employee_j: str
+    cost_savings: float      # ΔC = individual_cost_i + individual_cost_j - combined_cost
+    time_savings: float      # ΔT = individual_time_i + individual_time_j - combined_time
+    weighted_savings: float  # S_ij = α·ΔC + β·ΔT
+    compatible_vehicles: Set[str]
+    best_vehicle: str = None
+    best_sequence: List[str] = None
 
 
 class InitialSolutionBuilder:
     """
-    Constraint-First Solution Builder
-    1. Analyzes feasibility for ALL employees
-    2. Assigns most constrained employees first
-    3. Ensures maximum possible assignment
+    Enhanced PWSA following the algorithm specification exactly.
+    All constraint checks are performed before any assignment.
     """
     
-    def __init__(self, state: ProblemState, config: Dict = None):
+    def __init__(self, state, config: Dict = None):
         self.state = state
         self.constraints = state.constraints
         self.employees = state.employees
         self.vehicles = {v.id: v for v in state.veh_list}
         self.office = state.office
         
+        # Get alpha/beta from state
+        self.alpha = getattr(state, 'alpha', 1.0)
+        self.beta = getattr(state, 'beta', 0.0)
+        
+        # Configuration
         self.config = config or {}
-        self.alpha = state.alpha
-        self.beta = state.beta
         self.max_trips_per_vehicle = self.config.get('max_trips', 10)
+        self.top_k_seeds = self.config.get('top_k_seeds', None)  # None = auto
         
-        self._feasibility: Dict[str, EmployeeFeasibility] = {}
-    
-    def build(self) -> Solution:
-        """Build solution using constraint-first approach"""
-        # Step 1: Analyze feasibility
-        self._analyze_feasibility()
+        # Precomputed data
+        self._savings_list: List[SavingsEntry] = []
+        self._individual_costs: Dict[str, Dict[str, float]] = {}  # emp_id -> vid -> cost
+        self._individual_times: Dict[str, Dict[str, float]] = {}  # emp_id -> vid -> time
+        self._compatible_vehicles: Dict[str, Set[str]] = {}       # emp_id -> set of vids
         
-        # Step 2: Report any infeasible employees
-        infeasible = [eid for eid, f in self._feasibility.items() if f.num_options == 0]
-        if infeasible:
-            print(f"\n⚠️  WARNING: {len(infeasible)} employees have NO feasible options!")
-            for eid in infeasible:
-                self._debug_infeasibility(eid)
+    def build(self) -> 'Solution':
+        """
+        Main entry point - builds solution using PWSA algorithm.
+        """
+        # Phase I: Savings Calculation
+        self._phase1_savings_calculation()
         
-        # Step 3: Build solution
-        solution = self._build_solution()
+        # Phase II: Hybrid Construction
+        solution = self._phase2_hybrid_construction()
         
-        # Step 4: Post-optimize
-        solution = self._post_optimize(solution)
+        # Phase III: Multi-Trip Consolidation
+        solution = self._phase3_consolidation(solution)
+        
+        # Final validation
+        solution = self._final_validation(solution)
         
         return solution
     
-    def _analyze_feasibility(self):
-        """Analyze which (vehicle, trip) combinations work for each employee"""
-        self._feasibility = {}
+    # =========================================================================
+    # PHASE I: SAVINGS CALCULATION
+    # =========================================================================
+    
+    def _phase1_savings_calculation(self):
+        """
+        Phase I: Calculate savings for all pairs.
+        S_ij = α·ΔC + β·ΔT where:
+        - ΔC = cost_i + cost_j - cost_combined
+        - ΔT = time_i + time_j - time_combined
+        """
+        # Step 1: Compute individual costs and times for each employee
+        self._compute_individual_metrics()
         
+        # Step 2: Calculate savings for all pairs
+        self._savings_list = []
+        emp_ids = [e.id for e in self.state.emp_list]
+        n = len(emp_ids)
+        
+        for i in range(n):
+            for j in range(i + 1, n):
+                emp_i, emp_j = emp_ids[i], emp_ids[j]
+                
+                # Find common compatible vehicles
+                common_vehicles = (
+                    self._compatible_vehicles.get(emp_i, set()) &
+                    self._compatible_vehicles.get(emp_j, set())
+                )
+                
+                if not common_vehicles:
+                    continue
+                
+                # Check if merge satisfies Capacity & Time Windows (line 4 of algorithm)
+                entry = self._compute_pair_savings(emp_i, emp_j, common_vehicles)
+                
+                if entry and entry.weighted_savings > 0:
+                    self._savings_list.append(entry)
+        
+        # Sort by weighted savings S_ij in descending order (line 11)
+        self._savings_list.sort(key=lambda x: x.weighted_savings, reverse=True)
+    
+    def _compute_individual_metrics(self):
+        """Compute individual cost and time for each employee with each vehicle."""
         for emp in self.state.emp_list:
-            feas = EmployeeFeasibility(
-                employee_id=emp.id,
-                priority=emp.priority,
-                deadline=emp.adjusted_latest_drop,
-                earliest_pickup=emp.earliest_pickup
-            )
+            self._individual_costs[emp.id] = {}
+            self._individual_times[emp.id] = {}
+            self._compatible_vehicles[emp.id] = set()
             
             for vehicle in self.state.veh_list:
+                # CONSTRAINT 3: Check vehicle type compatibility
                 if vehicle.category.lower() not in emp.allowed_vehicle_types:
                     continue
                 
+                # CONSTRAINT 2: Check capacity (single employee)
                 cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [emp.id])
                 if not cap_ok:
                     continue
                 
-                # Try multiple trip slots
-                for trip_num in range(self.max_trips_per_vehicle):
-                    start_time, start_loc = self._estimate_trip_start(vehicle, trip_num)
+                # CONSTRAINT 1: Check time feasibility
+                time_ok, details = self.constraints.check_time_constraint(
+                    vehicle, [emp.id], [emp.id],
+                    vehicle.available_from, vehicle.start_location
+                )
+                
+                if time_ok:
+                    cost = details['total_distance'] * vehicle.cost_per_km
+                    time_val = details['arrival_at_office'] - vehicle.available_from
                     
-                    # Skip if trip would start too late
-                    if start_time > emp.adjusted_latest_drop:
-                        break
-                    
-                    time_ok, details = self.constraints.check_time_constraint(
-                        vehicle, [emp.id], [emp.id], start_time, start_loc
-                    )
-                    
-                    if time_ok:
-                        cost = details['total_distance'] * vehicle.cost_per_km
-                        arrival = details['arrival_at_office']
-                        feas.feasible_options.append((vehicle.id, trip_num, cost, arrival))
+                    self._individual_costs[emp.id][vehicle.id] = cost
+                    self._individual_times[emp.id][vehicle.id] = time_val
+                    self._compatible_vehicles[emp.id].add(vehicle.id)
+    
+    def _compute_pair_savings(self, emp_i: str, emp_j: str, 
+                               common_vehicles: Set[str]) -> Optional[SavingsEntry]:
+        """
+        Compute savings for a pair of employees.
+        Only returns entry if merge satisfies Capacity & Time Windows.
+        """
+        best_cost_savings = float('-inf')
+        best_time_savings = float('-inf')
+        best_weighted = float('-inf')
+        best_vehicle = None
+        best_sequence = None
+        feasible_vehicles = set()
+        
+        for vid in common_vehicles:
+            vehicle = self.vehicles[vid]
             
-            feas.analyze()
-            self._feasibility[emp.id] = feas
-    
-    def _estimate_trip_start(self, vehicle: Vehicle, trip_num: int) -> Tuple[float, Location]:
-        """Estimate when/where a trip would start"""
-        if trip_num == 0:
-            return vehicle.available_from, vehicle.start_location
-        
-        # Estimate ~25 min per prior trip
-        est_trip_duration = 25
-        start_time = vehicle.available_from + trip_num * (est_trip_duration + self.constraints.DROP_TIME)
-        return start_time, self.office
-    
-    def _debug_infeasibility(self, eid: str):
-        """Print debug info for infeasible employee"""
-        emp = self.employees[eid]
-        print(f"\n  {eid}:")
-        print(f"    - Vehicle types allowed: {emp.allowed_vehicle_types}")
-        print(f"    - Max sharing: {emp.max_passengers}")
-        print(f"    - Time window: {self._fmt_time(emp.earliest_pickup)} - {self._fmt_time(emp.adjusted_latest_drop)}")
-        
-        for vehicle in self.state.veh_list:
-            if vehicle.category.lower() not in emp.allowed_vehicle_types:
-                print(f"    - {vehicle.id}: ❌ wrong vehicle type ({vehicle.category})")
+            # CONSTRAINT 2: Check capacity & sharing for pair
+            cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [emp_i, emp_j])
+            if not cap_ok:
                 continue
             
-            for trip_num in range(3):
-                start_time, start_loc = self._estimate_trip_start(vehicle, trip_num)
-                
-                travel_to_emp = self.constraints.travel_time(start_loc, emp.pickup, vehicle.avg_speed)
-                arrival_at_emp = start_time + travel_to_emp
-                pickup_time = max(arrival_at_emp, emp.earliest_pickup)
-                
-                travel_to_office = self.constraints.travel_time(emp.pickup, self.office, vehicle.avg_speed)
-                arrival_at_office = pickup_time + travel_to_office
-                
-                status = "✅" if arrival_at_office <= emp.adjusted_latest_drop else "❌"
-                slack = emp.adjusted_latest_drop - arrival_at_office
-                print(f"    - {vehicle.id} trip {trip_num}: {status} arrive={self._fmt_time(arrival_at_office)}, "
-                      f"deadline={self._fmt_time(emp.adjusted_latest_drop)}, slack={slack:.0f}min")
+            # CONSTRAINT 3: Check vehicle type for pair
+            type_ok, _ = self.constraints.check_vehicle_type(vehicle, [emp_i, emp_j])
+            if not type_ok:
+                continue
+            
+            # Find best sequence that satisfies CONSTRAINT 1 (time)
+            best_seq = self.constraints.find_best_sequence(
+                vehicle, [emp_i, emp_j],
+                vehicle.available_from, vehicle.start_location
+            )
+            
+            if not best_seq:
+                continue  # No feasible sequence found
+            
+            # CONSTRAINT 1: Verify time constraint
+            time_ok, details = self.constraints.check_time_constraint(
+                vehicle, [emp_i, emp_j], best_seq,
+                vehicle.available_from, vehicle.start_location
+            )
+            
+            if not time_ok:
+                continue
+            
+            # All constraints satisfied - calculate savings
+            feasible_vehicles.add(vid)
+            
+            combined_cost = details['total_distance'] * vehicle.cost_per_km
+            combined_time = details['arrival_at_office'] - vehicle.available_from
+            
+            # Get individual metrics
+            cost_i = self._individual_costs.get(emp_i, {}).get(vid, float('inf'))
+            cost_j = self._individual_costs.get(emp_j, {}).get(vid, float('inf'))
+            time_i = self._individual_times.get(emp_i, {}).get(vid, float('inf'))
+            time_j = self._individual_times.get(emp_j, {}).get(vid, float('inf'))
+            
+            if cost_i == float('inf') or cost_j == float('inf'):
+                continue
+            
+            # Calculate savings (lines 5-7 of algorithm)
+            delta_c = cost_i + cost_j - combined_cost
+            delta_t = time_i + time_j - combined_time
+            s_ij = self.alpha * delta_c + self.beta * delta_t
+            
+            if s_ij > best_weighted:
+                best_cost_savings = delta_c
+                best_time_savings = delta_t
+                best_weighted = s_ij
+                best_vehicle = vid
+                best_sequence = best_seq
+        
+        if best_weighted <= 0 or not feasible_vehicles:
+            return None
+        
+        return SavingsEntry(
+            employee_i=emp_i,
+            employee_j=emp_j,
+            cost_savings=best_cost_savings,
+            time_savings=best_time_savings,
+            weighted_savings=best_weighted,
+            compatible_vehicles=feasible_vehicles,
+            best_vehicle=best_vehicle,
+            best_sequence=best_sequence
+        )
     
-    def _build_solution(self) -> Solution:
-        """Build solution by assigning most constrained employees first"""
+    # =========================================================================
+    # PHASE II: HYBRID CONSTRUCTION
+    # =========================================================================
+    
+    def _phase2_hybrid_construction(self) -> 'Solution':
+        """
+        Phase II: Hybrid Construction
+        - Step 1: Seed Routes from top k pairs
+        - Step 2: Regret-k Insertion for remaining
+        """
+        # Initialize empty routes (line 13)
         solution = Solution()
         for v in self.state.veh_list:
             solution.schedules.append(VehicleSchedule(vehicle=v))
         
-        # Sort employees: fewest options first, then by priority, then by deadline
-        sorted_emps = sorted(
-            self.state.emp_list,
-            key=lambda e: (
-                self._feasibility[e.id].num_options,
-                e.priority,
-                e.adjusted_latest_drop
-            )
-        )
+        assigned = set()
         
-        for emp in sorted_emps:
-            if self._feasibility[emp.id].num_options == 0:
-                continue
-            self._assign_to_best_trip(solution, emp.id)
+        # Step 1: Seed Routes (lines 14-20)
+        assigned = self._step1_seed_routes(solution, assigned)
+        
+        # Step 2: Regret-k Insertion (lines 21-30)
+        assigned = self._step2_regret_insertion(solution, assigned)
         
         return solution
     
-    def _assign_to_best_trip(self, sol: Solution, eid: str) -> bool:
-        """Assign employee to the best feasible trip"""
-        emp = self.employees[eid]
-        best_score = float('inf')
-        best_schedule = None
-        best_trip_idx = None
-        best_sequence = None
-        is_new_trip = False
+    def _step1_seed_routes(self, solution: 'Solution', assigned: Set[str]) -> Set[str]:
+        """
+        Step 1: Create seed routes from top k pairs in L_savings.
+        """
+        # Determine k (number of seeds)
+        if self.top_k_seeds is None:
+            k = max(1, len(self.state.emp_list) // 4)
+        else:
+            k = self.top_k_seeds
         
-        for schedule in sol.schedules:
+        seeds_created = 0
+        
+        for entry in self._savings_list:
+            if seeds_created >= k:
+                break
+            
+            emp_i, emp_j = entry.employee_i, entry.employee_j
+            
+            # Skip if either already assigned
+            if emp_i in assigned or emp_j in assigned:
+                continue
+            
+            # Check if pair can initialize a route (line 16)
+            if not self._can_create_route(solution, [emp_i, emp_j], entry.best_vehicle):
+                continue
+            
+            # Create new route with pair (line 17)
+            if self._create_trip(solution, [emp_i, emp_j], entry.best_vehicle, entry.best_sequence):
+                assigned.add(emp_i)
+                assigned.add(emp_j)
+                seeds_created += 1
+        
+        return assigned
+    
+    def _step2_regret_insertion(self, solution: 'Solution', assigned: Set[str]) -> Set[str]:
+        """
+        Step 2: Regret-k Insertion for unassigned requests.
+        """
+        unassigned = [e.id for e in self.state.emp_list if e.id not in assigned]
+        
+        while unassigned:
+            best_emp = None
+            best_regret = float('-inf')
+            best_insertion = None  # (objective, schedule_idx, trip_idx, is_new_trip)
+            
+            for eid in unassigned:
+                # Calculate insertion costs for all feasible positions (lines 24-25)
+                insertion_options = self._get_insertion_options(solution, eid)
+                
+                if not insertion_options:
+                    continue
+                
+                # Sort by objective (cost)
+                insertion_options.sort(key=lambda x: x[0])
+                
+                c1 = insertion_options[0][0]  # Best cost
+                c2 = insertion_options[1][0] if len(insertion_options) >= 2 else float('inf')
+                
+                # Regret = c2 - c1 (line 26)
+                regret = c2 - c1
+                
+                if regret > best_regret:
+                    best_regret = regret
+                    best_emp = eid
+                    best_insertion = insertion_options[0]
+            
+            if best_emp is None:
+                # No feasible insertion - try to create individual trips
+                for eid in unassigned.copy():
+                    if self._assign_to_new_trip(solution, eid):
+                        assigned.add(eid)
+                        unassigned.remove(eid)
+                break
+            
+            # Insert u* into best position (line 29)
+            obj, sched_idx, trip_idx, is_new, sequence = best_insertion
+            
+            if is_new:
+                # Create new trip
+                schedule = solution.schedules[sched_idx]
+                vid = schedule.vehicle.id
+                if self._create_trip_for_employee(solution, best_emp, sched_idx):
+                    assigned.add(best_emp)
+            else:
+                # Insert into existing trip
+                if self._insert_into_trip(solution, best_emp, sched_idx, trip_idx, sequence):
+                    assigned.add(best_emp)
+            
+            unassigned.remove(best_emp)
+        
+        return assigned
+    
+    def _get_insertion_options(self, solution: 'Solution', eid: str) -> List[Tuple]:
+        """
+        Get all feasible insertion options for an employee.
+        Returns list of (objective, schedule_idx, trip_idx, is_new_trip, sequence)
+        """
+        options = []
+        emp = self.employees[eid]
+        
+        for sched_idx, schedule in enumerate(solution.schedules):
             vehicle = schedule.vehicle
             
+            # CONSTRAINT 3: Check vehicle type
             if vehicle.category.lower() not in emp.allowed_vehicle_types:
                 continue
             
-            # Try existing trips
-            for i, trip in enumerate(schedule.trips):
+            # Try inserting into existing trips
+            for trip_idx, trip in enumerate(schedule.trips):
                 test_emps = trip.employees + [eid]
                 
+                # CONSTRAINT 2: Check capacity & sharing
                 cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, test_emps)
-                type_ok, _ = self.constraints.check_vehicle_type(vehicle, test_emps)
-                
-                if not (cap_ok and type_ok):
+                if not cap_ok:
                     continue
                 
+                # CONSTRAINT 3: Check vehicle type for combined group
+                type_ok, _ = self.constraints.check_vehicle_type(vehicle, test_emps)
+                if not type_ok:
+                    continue
+                
+                # Find best sequence satisfying CONSTRAINT 1
                 best_seq = self.constraints.find_best_sequence(
                     vehicle, test_emps, trip.start_time, trip.start_location
                 )
@@ -664,96 +902,304 @@ class InitialSolutionBuilder:
                 )
                 
                 if time_ok:
-                    cost = details['total_distance'] * vehicle.cost_per_km
-                    time_val = details['arrival_at_office']
-                    score = self.alpha * cost + self.beta * time_val
-                    score *= 0.85  # Consolidation bonus
-                    
-                    if score < best_score:
-                        best_score = score
-                        best_schedule = schedule
-                        best_trip_idx = i
-                        best_sequence = best_seq
-                        is_new_trip = False
+                    objective = self._compute_objective(details, vehicle)
+                    options.append((objective, sched_idx, trip_idx, False, best_seq))
             
-            # Try new trip
-            if schedule.trips:
-                start_time = schedule.get_end_time() + self.constraints.DROP_TIME
-                start_loc = self.office
-            else:
-                start_time = vehicle.available_from
-                start_loc = vehicle.start_location
+            # Try creating new trip on this vehicle
+            start_time, start_loc = self._get_next_trip_start(schedule)
             
+            # CONSTRAINT 2: Check capacity
             cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
-            type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
+            if not cap_ok:
+                continue
             
-            if cap_ok and type_ok:
-                time_ok, details = self.constraints.check_time_constraint(
-                    vehicle, [eid], [eid], start_time, start_loc
-                )
-                
-                if time_ok:
-                    cost = details['total_distance'] * vehicle.cost_per_km
-                    time_val = details['arrival_at_office']
-                    score = self.alpha * cost + self.beta * time_val
-                    
-                    if score < best_score:
-                        best_score = score
-                        best_schedule = schedule
-                        best_trip_idx = -1
-                        best_sequence = [eid]
-                        is_new_trip = True
-        
-        if best_schedule is None:
-            return False
-        
-        if is_new_trip:
-            vehicle = best_schedule.vehicle
-            if best_schedule.trips:
-                start_time = best_schedule.get_end_time() + self.constraints.DROP_TIME
-                start_loc = self.office
-            else:
-                start_time = vehicle.available_from
-                start_loc = vehicle.start_location
-            
-            _, details = self.constraints.check_time_constraint(
+            # CONSTRAINT 1: Check time
+            time_ok, details = self.constraints.check_time_constraint(
                 vehicle, [eid], [eid], start_time, start_loc
             )
             
-            new_trip = Trip(
-                vehicle_id=vehicle.id,
-                employees=[eid],
-                pickup_sequence=[eid],
-                start_time=start_time,
-                start_location=start_loc,
-                arrival_at_office=details['arrival_at_office'],
-                pickup_times=details['pickup_times'],
-                distance_km=details['total_distance']
-            )
-            best_schedule.trips.append(new_trip)
+            if time_ok:
+                objective = self._compute_objective(details, vehicle)
+                # Small penalty for new trip to prefer consolidation
+                objective *= 1.05
+                options.append((objective, sched_idx, -1, True, [eid]))
+        
+        return options
+    
+    def _compute_objective(self, details: Dict, vehicle) -> float:
+        """Compute objective: α·cost + β·time"""
+        total_distance = details.get('total_distance', 0)
+        start_time = details.get('start_time', 0)
+        arrival_at_office = details.get('arrival_at_office', start_time)
+        
+        cost = total_distance * vehicle.cost_per_km
+        time_val = arrival_at_office - start_time
+        
+        return self.alpha * cost + self.beta * time_val
+    
+    def _get_next_trip_start(self, schedule: 'VehicleSchedule') -> Tuple[float, 'Location']:
+        """Get start time and location for next trip on this vehicle."""
+        if schedule.trips:
+            last_trip = schedule.trips[-1]
+            start_time = last_trip.arrival_at_office + self.constraints.DROP_TIME
+            start_loc = self.office
         else:
-            trip = best_schedule.trips[best_trip_idx]
-            trip.employees.append(eid)
-            trip.pickup_sequence = best_sequence
-            
-            _, details = self.constraints.check_time_constraint(
-                best_schedule.vehicle, trip.employees, best_sequence,
-                trip.start_time, trip.start_location
+            start_time = schedule.vehicle.available_from
+            start_loc = schedule.vehicle.start_location
+        return start_time, start_loc
+    
+    def _can_create_route(self, solution: 'Solution', emp_ids: List[str], vid: str) -> bool:
+        """Check if we can create a route for these employees on this vehicle."""
+        vehicle = self.vehicles[vid]
+        
+        # Find the schedule for this vehicle
+        schedule = None
+        for s in solution.schedules:
+            if s.vehicle.id == vid:
+                schedule = s
+                break
+        
+        if not schedule:
+            return False
+        
+        start_time, start_loc = self._get_next_trip_start(schedule)
+        
+        # Check all constraints
+        cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, emp_ids)
+        if not cap_ok:
+            return False
+        
+        type_ok, _ = self.constraints.check_vehicle_type(vehicle, emp_ids)
+        if not type_ok:
+            return False
+        
+        best_seq = self.constraints.find_best_sequence(vehicle, emp_ids, start_time, start_loc)
+        if not best_seq:
+            return False
+        
+        time_ok, _ = self.constraints.check_time_constraint(
+            vehicle, emp_ids, best_seq, start_time, start_loc
+        )
+        
+        return time_ok
+    
+    def _create_trip(self, solution: 'Solution', emp_ids: List[str], 
+                     vid: str, sequence: List[str] = None) -> bool:
+        """Create a new trip with the given employees."""
+        vehicle = self.vehicles[vid]
+        
+        # Find schedule
+        schedule = None
+        for s in solution.schedules:
+            if s.vehicle.id == vid:
+                schedule = s
+                break
+        
+        if not schedule:
+            return False
+        
+        start_time, start_loc = self._get_next_trip_start(schedule)
+        
+        # Find best sequence if not provided
+        if not sequence:
+            sequence = self.constraints.find_best_sequence(
+                vehicle, emp_ids, start_time, start_loc
             )
-            trip.arrival_at_office = details['arrival_at_office']
-            trip.pickup_times = details['pickup_times']
-            trip.distance_km = details['total_distance']
+        
+        if not sequence:
+            return False
+        
+        # Verify constraints one more time
+        time_ok, details = self.constraints.check_time_constraint(
+            vehicle, emp_ids, sequence, start_time, start_loc
+        )
+        
+        # FIX: Verify we have all required details
+        if not time_ok:
+            return False
+        
+        if 'arrival_at_office' not in details:
+            return False
+        
+        # Create trip
+        trip = Trip(
+            vehicle_id=vid,
+            employees=emp_ids.copy(),
+            pickup_sequence=sequence.copy(),
+            start_time=start_time,
+            start_location=start_loc,
+            arrival_at_office=details['arrival_at_office'],
+            pickup_times=details.get('pickup_times', {}),
+            distance_km=details.get('total_distance', 0),
+            route=details.get('route', [])
+        )
+        
+        schedule.trips.append(trip)
+        return True
+    
+    def _create_trip_for_employee(self, solution: 'Solution', eid: str, sched_idx: int) -> bool:
+        """Create a new trip for a single employee on the given schedule."""
+        schedule = solution.schedules[sched_idx]
+        vehicle = schedule.vehicle
+        
+        start_time, start_loc = self._get_next_trip_start(schedule)
+        
+        # Verify all constraints
+        cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
+        type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
+        
+        if not (cap_ok and type_ok):
+            return False
+        
+        time_ok, details = self.constraints.check_time_constraint(
+            vehicle, [eid], [eid], start_time, start_loc
+        )
+        
+        # FIX: Verify we have all required details
+        if not time_ok:
+            return False
+        
+        if 'arrival_at_office' not in details:
+            return False
+        
+        trip = Trip(
+            vehicle_id=vehicle.id,
+            employees=[eid],
+            pickup_sequence=[eid],
+            start_time=start_time,
+            start_location=start_loc,
+            arrival_at_office=details['arrival_at_office'],
+            pickup_times=details.get('pickup_times', {}),
+            distance_km=details.get('total_distance', 0),
+            route=details.get('route', [])
+        )
+        
+        schedule.trips.append(trip)
+        return True
+    
+    def _insert_into_trip(self, solution: 'Solution', eid: str, 
+                          sched_idx: int, trip_idx: int, sequence: List[str]) -> bool:
+        """Insert employee into existing trip."""
+        schedule = solution.schedules[sched_idx]
+        trip = schedule.trips[trip_idx]
+        vehicle = schedule.vehicle
+        
+        new_emps = trip.employees + [eid]
+        
+        # Verify all constraints
+        cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, new_emps)
+        type_ok, _ = self.constraints.check_vehicle_type(vehicle, new_emps)
+        
+        if not (cap_ok and type_ok):
+            return False
+        
+        time_ok, details = self.constraints.check_time_constraint(
+            vehicle, new_emps, sequence, trip.start_time, trip.start_location
+        )
+        
+        if not time_ok:
+            return False
+        
+        # FIX: Verify details has required keys before updating
+        if 'arrival_at_office' not in details:
+            return False
+        
+        # Update trip
+        trip.employees = new_emps
+        trip.pickup_sequence = sequence
+        trip.arrival_at_office = details['arrival_at_office']
+        trip.pickup_times = details.get('pickup_times', {})
+        trip.distance_km = details.get('total_distance', 0)
+        trip.route = details.get('route', [])
+        
+        # Update subsequent trips' start times (only if there are more trips)
+        if trip_idx + 1 < len(schedule.trips):
+            self._update_subsequent_trips(schedule, trip_idx + 1)
         
         return True
     
-    def _post_optimize(self, solution: Solution) -> Solution:
-        """Try to merge trips and improve solution"""
-        improved = True
-        iterations = 0
+    def _assign_to_new_trip(self, solution: 'Solution', eid: str) -> bool:
+        """Try to assign employee to a new trip on any compatible vehicle."""
+        emp = self.employees[eid]
         
-        while improved and iterations < 20:
+        best_objective = float('inf')
+        best_sched_idx = None
+        
+        for sched_idx, schedule in enumerate(solution.schedules):
+            vehicle = schedule.vehicle
+            
+            # Check vehicle type
+            if vehicle.category.lower() not in emp.allowed_vehicle_types:
+                continue
+            
+            start_time, start_loc = self._get_next_trip_start(schedule)
+            
+            # Check all constraints
+            cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
+            type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
+            
+            if not (cap_ok and type_ok):
+                continue
+            
+            time_ok, details = self.constraints.check_time_constraint(
+                vehicle, [eid], [eid], start_time, start_loc
+            )
+            
+            if time_ok:
+                objective = self._compute_objective(details, vehicle)
+                if objective < best_objective:
+                    best_objective = objective
+                    best_sched_idx = sched_idx
+        
+        if best_sched_idx is not None:
+            return self._create_trip_for_employee(solution, eid, best_sched_idx)
+        
+        return False
+    
+    def _update_subsequent_trips(self, schedule: 'VehicleSchedule', start_idx: int):
+        """Update start times for all trips from start_idx onwards."""
+        for i in range(start_idx, len(schedule.trips)):
+            if i == 0:
+                prev_end = schedule.vehicle.available_from
+            else:
+                prev_end = schedule.trips[i - 1].arrival_at_office + self.constraints.DROP_TIME
+            
+            trip = schedule.trips[i]
+            trip.start_time = prev_end
+            trip.start_location = self.office if i > 0 else schedule.vehicle.start_location
+            
+            # Recalculate trip details
+            time_ok, details = self.constraints.check_time_constraint(
+                schedule.vehicle, trip.employees, trip.pickup_sequence,
+                trip.start_time, trip.start_location
+            )
+            
+            # FIX: Safely access details with defaults (details always has these keys)
+            if 'arrival_at_office' in details:
+                trip.arrival_at_office = details['arrival_at_office']
+            if 'pickup_times' in details:
+                trip.pickup_times = details['pickup_times']
+            if 'total_distance' in details:
+                trip.distance_km = details['total_distance']
+            if 'route' in details:
+                trip.route = details['route']
+    
+    # =========================================================================
+    # PHASE III: MULTI-TRIP CONSOLIDATION
+    # =========================================================================
+    
+    def _phase3_consolidation(self, solution: 'Solution') -> 'Solution':
+        """
+        Phase III: Multi-Trip Consolidation
+        Try to merge trips on same vehicle while respecting constraints.
+        """
+        improved = True
+        max_iterations = 50
+        iteration = 0
+        
+        while improved and iteration < max_iterations:
             improved = False
-            iterations += 1
+            iteration += 1
             
             for schedule in solution.schedules:
                 if len(schedule.trips) < 2:
@@ -764,64 +1210,226 @@ class InitialSolutionBuilder:
                     trip_i = schedule.trips[i]
                     trip_j = schedule.trips[i + 1]
                     
-                    combined = trip_i.employees + trip_j.employees
-                    vehicle = schedule.vehicle
-                    
-                    cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, combined)
-                    type_ok, _ = self.constraints.check_vehicle_type(vehicle, combined)
-                    
-                    if cap_ok and type_ok:
-                        best_seq = self.constraints.find_best_sequence(
-                            vehicle, combined, trip_i.start_time, trip_i.start_location
-                        )
-                        
-                        if best_seq:
-                            time_ok, details = self.constraints.check_time_constraint(
-                                vehicle, combined, best_seq,
-                                trip_i.start_time, trip_i.start_location
-                            )
-                            
-                            if time_ok:
-                                trip_i.employees = combined
-                                trip_i.pickup_sequence = best_seq
-                                trip_i.arrival_at_office = details['arrival_at_office']
-                                trip_i.pickup_times = details['pickup_times']
-                                trip_i.distance_km = details['total_distance']
-                                
-                                schedule.trips.remove(trip_j)
-                                self._update_subsequent_trips(schedule, i + 1)
-                                improved = True
-                                continue
-                    
-                    i += 1
+                    # Try to merge
+                    if self._can_merge_trips(schedule, trip_i, trip_j):
+                        self._merge_trips(schedule, i)
+                        improved = True
+                        # Don't increment i - check same position again
+                    else:
+                        i += 1
         
         return solution
     
-    def _update_subsequent_trips(self, schedule: VehicleSchedule, start_idx: int):
-        """Update start times for trips after a merge"""
-        for i in range(start_idx, len(schedule.trips)):
-            prev_trip = schedule.trips[i - 1] if i > 0 else None
-            trip = schedule.trips[i]
-            
-            if prev_trip:
-                trip.start_time = prev_trip.arrival_at_office + self.constraints.DROP_TIME
-                trip.start_location = self.office
-            else:
-                trip.start_time = schedule.vehicle.available_from
-                trip.start_location = schedule.vehicle.start_location
-            
-            _, details = self.constraints.check_time_constraint(
-                schedule.vehicle, trip.employees, trip.pickup_sequence,
-                trip.start_time, trip.start_location
-            )
-            trip.arrival_at_office = details['arrival_at_office']
-            trip.pickup_times = details['pickup_times']
-            trip.distance_km = details['total_distance']
+    def _can_merge_trips(self, schedule: 'VehicleSchedule', 
+                          trip_i: 'Trip', trip_j: 'Trip') -> bool:
+        """Check if two consecutive trips can be merged."""
+        vehicle = schedule.vehicle
+        combined_emps = trip_i.employees + trip_j.employees
+        
+        # CONSTRAINT 2: Check capacity & sharing
+        cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, combined_emps)
+        if not cap_ok:
+            return False
+        
+        # CONSTRAINT 3: Check vehicle type
+        type_ok, _ = self.constraints.check_vehicle_type(vehicle, combined_emps)
+        if not type_ok:
+            return False
+        
+        # Find best sequence satisfying CONSTRAINT 1
+        best_seq = self.constraints.find_best_sequence(
+            vehicle, combined_emps, trip_i.start_time, trip_i.start_location
+        )
+        
+        if not best_seq:
+            return False
+        
+        time_ok, _ = self.constraints.check_time_constraint(
+            vehicle, combined_emps, best_seq, trip_i.start_time, trip_i.start_location
+        )
+        
+        return time_ok
     
-    def _fmt_time(self, mins: float) -> str:
-        h, m = int(mins // 60), int(mins % 60)
-        return f"{h:02d}:{m:02d}"
-
+    def _merge_trips(self, schedule: 'VehicleSchedule', trip_idx: int):
+        """Merge trip at trip_idx with trip at trip_idx+1."""
+        trip_i = schedule.trips[trip_idx]
+        trip_j = schedule.trips[trip_idx + 1]
+        vehicle = schedule.vehicle
+        
+        combined_emps = trip_i.employees + trip_j.employees
+        
+        best_seq = self.constraints.find_best_sequence(
+            vehicle, combined_emps, trip_i.start_time, trip_i.start_location
+        )
+        
+        _, details = self.constraints.check_time_constraint(
+            vehicle, combined_emps, best_seq, trip_i.start_time, trip_i.start_location
+        )
+        
+        # Update trip_i with merged data
+        trip_i.employees = combined_emps
+        trip_i.pickup_sequence = best_seq
+        trip_i.arrival_at_office = details['arrival_at_office']
+        trip_i.pickup_times = details['pickup_times']
+        trip_i.distance_km = details['total_distance']
+        trip_i.route = details['route']
+        
+        # Remove trip_j
+        schedule.trips.remove(trip_j)
+        
+        # Update subsequent trips
+        self._update_subsequent_trips(schedule, trip_idx + 1)
+    
+    # =========================================================================
+    # FINAL VALIDATION
+    # =========================================================================
+    
+    def _final_validation(self, solution: 'Solution') -> 'Solution':
+        """
+        Final validation pass - ensure all constraints are satisfied.
+        Remove any violating trips and try to reassign those employees.
+        """
+        removed_employees = []
+        
+        for schedule in solution.schedules:
+            valid_trips = []
+            current_time = schedule.vehicle.available_from
+            current_loc = schedule.vehicle.start_location
+            
+            for trip in schedule.trips:
+                # Update start time based on actual position
+                trip.start_time = current_time
+                trip.start_location = current_loc
+                
+                # Verify ALL constraints
+                feasible, details = self.constraints.is_trip_feasible(
+                    schedule.vehicle, trip.employees, trip.pickup_sequence,
+                    trip.start_time, trip.start_location
+                )
+                
+                if feasible:
+                    # FIX: Safely access nested details
+                    time_details = details.get('time', {})
+                    
+                    if 'arrival_at_office' in time_details:
+                        trip.arrival_at_office = time_details['arrival_at_office']
+                    if 'pickup_times' in time_details:
+                        trip.pickup_times = time_details['pickup_times']
+                    if 'total_distance' in time_details:
+                        trip.distance_km = time_details['total_distance']
+                    if 'route' in time_details:
+                        trip.route = time_details['route']
+                    
+                    valid_trips.append(trip)
+                    current_time = trip.arrival_at_office + self.constraints.DROP_TIME
+                    current_loc = self.office
+                else:
+                    # Trip violates constraints - remove employees for reassignment
+                    removed_employees.extend(trip.employees)
+            
+            schedule.trips = valid_trips
+        
+        # Try to reassign removed employees
+        for eid in removed_employees:
+            self._assign_to_best_trip(solution, eid)
+        
+        return solution
+    
+    # =========================================================================
+    # METHOD REQUIRED BY ALNS REPAIR OPERATORS
+    # =========================================================================
+    
+    def _assign_to_best_trip(self, sol: 'Solution', eid: str) -> bool:
+        """
+        Assign employee to best feasible trip.
+        Used by ALNS repair operators and final validation.
+        """
+        emp = self.employees[eid]
+        best_objective = float('inf')
+        best_option = None  # (sched_idx, trip_idx, is_new, sequence)
+        
+        for sched_idx, schedule in enumerate(sol.schedules):
+            vehicle = schedule.vehicle
+            
+            # CONSTRAINT 3: Check vehicle type
+            if vehicle.category.lower() not in emp.allowed_vehicle_types:
+                continue
+            
+            # Try existing trips
+            for trip_idx, trip in enumerate(schedule.trips):
+                test_emps = trip.employees + [eid]
+                
+                # CONSTRAINT 2: Check capacity & sharing
+                cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, test_emps)
+                if not cap_ok:
+                    continue
+                
+                # CONSTRAINT 3: Check vehicle type for group
+                type_ok, _ = self.constraints.check_vehicle_type(vehicle, test_emps)
+                if not type_ok:
+                    continue
+                
+                # Find sequence satisfying CONSTRAINT 1
+                best_seq = self.constraints.find_best_sequence(
+                    vehicle, test_emps, trip.start_time, trip.start_location
+                )
+                
+                if not best_seq:
+                    continue
+                
+                time_ok, details = self.constraints.check_time_constraint(
+                    vehicle, test_emps, best_seq, trip.start_time, trip.start_location
+                )
+                
+                # FIX: Verify we have valid details
+                if time_ok and 'arrival_at_office' in details and 'total_distance' in details:
+                    objective = self._compute_objective(details, vehicle)
+                    objective *= 0.9  # Bonus for consolidation
+                    
+                    if objective < best_objective:
+                        best_objective = objective
+                        best_option = (sched_idx, trip_idx, False, best_seq)
+            
+            # Try new trip
+            start_time, start_loc = self._get_next_trip_start(schedule)
+            
+            cap_ok, _ = self.constraints.check_capacity_sharing(vehicle, [eid])
+            type_ok, _ = self.constraints.check_vehicle_type(vehicle, [eid])
+            
+            if cap_ok and type_ok:
+                time_ok, details = self.constraints.check_time_constraint(
+                    vehicle, [eid], [eid], start_time, start_loc
+                )
+                
+                # FIX: Verify we have valid details
+                if time_ok and 'arrival_at_office' in details and 'total_distance' in details:
+                    objective = self._compute_objective(details, vehicle)
+                    
+                    if objective < best_objective:
+                        best_objective = objective
+                        best_option = (sched_idx, -1, True, [eid])
+        
+        if best_option is None:
+            return False
+        
+        sched_idx, trip_idx, is_new, sequence = best_option
+        
+        if is_new:
+            return self._create_trip_for_employee(sol, eid, sched_idx)
+        else:
+            return self._insert_into_trip(sol, eid, sched_idx, trip_idx, sequence)
+    
+    def _calculate_solution_cost(self, solution: 'Solution') -> float:
+        """Calculate total objective for solution (for compatibility)."""
+        total_cost = 0.0
+        total_time = 0.0
+        
+        for schedule in solution.schedules:
+            for trip in schedule.trips:
+                total_cost += trip.distance_km * schedule.vehicle.cost_per_km
+                total_time += trip.arrival_at_office - trip.start_time
+        
+        return self.alpha * total_cost + self.beta * total_time
 
 # =============================================================================
 # DESTROY / REPAIR OPERATORS
@@ -830,6 +1438,8 @@ class InitialSolutionBuilder:
 class DestroyOperators:
     def __init__(self, state: ProblemState):
         self.state = state
+        # We need a builder instance to access the update logic
+        self.builder = InitialSolutionBuilder(state)
     
     def random_removal(self, sol: Solution, q: int) -> Tuple[Solution, List[str]]:
         s = sol.copy()
@@ -858,31 +1468,51 @@ class DestroyOperators:
         
         return s, removed
     
-    def trip_removal(self, sol: Solution, q: int) -> Tuple[Solution, List[str]]:
-        s = sol.copy()
-        
-        all_trips = [(sched, trip) for sched in s.schedules for trip in sched.trips if trip.employees]
-        if not all_trips:
-            return s, []
-        
-        sched, trip = random.choice(all_trips)
-        removed = trip.employees.copy()
-        sched.trips.remove(trip)
-        
-        return s, removed
-    
     def _remove(self, sol: Solution, eid: str):
         for schedule in sol.schedules:
-            for trip in schedule.trips:
+            for trip_idx, trip in enumerate(schedule.trips):
                 if eid in trip.employees:
                     trip.employees.remove(eid)
                     if eid in trip.pickup_sequence:
                         trip.pickup_sequence.remove(eid)
+                    
+                    # If trip is now empty, remove it; otherwise, update it
+                    if not trip.employees:
+                        schedule.trips.pop(trip_idx)
+                    else:
+                        # Recalculate this trip's timing
+                        feasible, details = self.state.constraints.check_time_constraint(
+                            schedule.vehicle, trip.employees, trip.pickup_sequence,
+                            trip.start_time, trip.start_location
+                        )
+                        if feasible:
+                            trip.arrival_at_office = details['arrival_at_office']
+                            trip.pickup_times = details.get('pickup_times', {})
+                            trip.distance_km = details.get('total_distance', 0)
+                            trip.route = details.get('route', [])
+                    
+                    # RIPPLE EFFECT: Shift all subsequent trips earlier
+                    self.builder._update_subsequent_trips(schedule, trip_idx)
                     return
-        
-        for schedule in sol.schedules:
-            schedule.trips = [t for t in schedule.trips if t.employees]
 
+    def trip_removal(self, sol: Solution, q: int) -> Tuple[Solution, List[str]]:
+        s = sol.copy()
+        all_trips = [(sched, idx, trip) for sched in s.schedules 
+                     for idx, trip in enumerate(sched.trips) if trip.employees]
+        
+        if not all_trips:
+            return s, []
+        
+        sched, idx, trip = random.choice(all_trips)
+        removed = trip.employees.copy()
+        
+        # Remove the trip entirely
+        sched.trips.pop(idx)
+        
+        # RIPPLE EFFECT: Subsequent trips can now start much earlier
+        self.builder._update_subsequent_trips(sched, idx)
+        
+        return s, removed
 
 class RepairOperators:
     def __init__(self, state: ProblemState):
@@ -922,6 +1552,8 @@ class ALNSConfig:
         self.max_no_improve = 400
         self.temp_start = 0.05
         self.cooling = 0.9995
+        # NEW: Number of probabilistic initial attempts
+        self.num_runs = 20
 
 
 class ALNS:
@@ -937,28 +1569,89 @@ class ALNS:
             self.destroy.worst_removal,
             self.destroy.trip_removal
         ]
+        
+        # Lambda used to pass k=2 to regret insertion
         self.repair_ops = [
             self.repair.greedy_insertion,
             lambda s, r: self.repair.regret_insertion(s, r, 2)
         ]
         
-        self.best_sol = None
-        self.best_cost = float('inf')
-    
+        # Global best across ALL runs
+        self.global_best_sol = None
+        self.global_best_cost = float('inf')
+        self.global_best_breakdown = {}
+
     def solve(self, verbose=True) -> Tuple[Solution, Dict]:
-        t0 = time.time()
+        t0_total = time.time()
         
-        builder = InitialSolutionBuilder(self.state)
-        current = builder.build()
-        curr_cost, _ = self.state.solution_cost(current)
-        
-        self.best_sol = current.copy()
-        self.best_cost = curr_cost
-        
-        assigned = len(current.all_assigned())
         if verbose:
-            print(f"Initial: objective={curr_cost:.2f}, trips={current.total_trips()}, "
-                  f"assigned={assigned}/{self.state.total_employees}")
+            print(f"Starting Multi-Start ALNS ({self.cfg.num_runs} runs)...")
+            print(f"{'Run':<5} | {'Init Cost':<10} | {'Final Cost':<10} | {'Assigned':<10} | {'Improv %':<10} | {'Status'}")
+            print("-" * 65)
+
+        # Initialize Global Best with a dummy empty solution
+        self.global_best_sol = None
+        self.global_best_cost = float('inf')
+        self.global_best_breakdown = {}
+
+        for run_idx in range(self.cfg.num_runs):
+            t0_run = time.time()
+            
+            # 1. Build Probabilistic Initial Solution
+            builder = InitialSolutionBuilder(self.state)
+            current_sol = builder.build()
+            
+            initial_cost, _ = self.state.solution_cost(current_sol)
+            
+            # Local best for this specific run
+            run_best_sol = current_sol.copy()
+            run_best_cost = initial_cost
+            
+            # 2. Run ALNS Optimization for this run
+            # Note: We pass copies to avoid reference issues
+            final_sol, run_best_sol, run_best_cost = self._run_alns_loop(
+                current_sol, run_best_sol, run_best_cost
+            )
+            
+            # 3. Check against Global Best
+            run_assigned = len(run_best_sol.all_assigned())
+            
+            is_new_global_best = False
+            
+            if run_best_cost < self.global_best_cost:
+                is_new_global_best = True
+            
+            status = ""
+            if is_new_global_best:
+                self.global_best_sol = run_best_sol.copy()
+                self.global_best_cost = run_best_cost
+                _, self.global_best_breakdown = self.state.solution_cost(run_best_sol)
+                status = "🏆 NEW BEST"
+
+            if verbose:
+                improv_pct = ((initial_cost - run_best_cost) / initial_cost * 100) if initial_cost > 0 else 0.0
+                print(f"{run_idx+1:<5} | {initial_cost:<10.5f} | {run_best_cost:<10.5f} | {run_assigned:<10} | {improv_pct:<9.1f}% | {status}")
+
+        elapsed_total = time.time() - t0_total
+        self.global_best_breakdown['time_sec'] = elapsed_total
+        self.global_best_breakdown['total_runs'] = self.cfg.num_runs
+        
+        if verbose:
+            print("-" * 65)
+            print(f"Total Optimization Time: {elapsed_total:.2f}s")
+            if self.global_best_sol:
+                final_assigned = len(self.global_best_sol.all_assigned())
+                print(f"Final Best Cost: {self.global_best_cost:.2f} (Assigned: {final_assigned}/{self.state.total_employees})")
+        
+        return self.global_best_sol, self.global_best_breakdown
+
+    def _run_alns_loop(self, current_sol: Solution, best_sol: Solution, best_cost: float):
+        """
+        Internal method to run one complete ALNS cycle on a given solution.
+        Returns: (final_current_sol, best_found_sol, best_found_cost)
+        """
+        current = current_sol
+        curr_cost = best_cost
         
         temp = self.cfg.temp_start * curr_cost if curr_cost > 0 else 100
         
@@ -968,44 +1661,61 @@ class ALNS:
         while iteration < self.cfg.max_iter and no_improve < self.cfg.max_no_improve:
             iteration += 1
             
+            # Select Operators
             d_op = random.choice(self.destroy_ops)
             r_op = random.choice(self.repair_ops)
             
+            # Determine removal size q
             n_assigned = len(current.all_assigned())
             if n_assigned == 0:
-                current = self.best_sol.copy()
-                curr_cost = self.best_cost
+                # If empty, reset to best and continue
+                current = best_sol.copy()
+                curr_cost = best_cost
+                no_improve += 1
                 continue
-            
+                
             q = random.randint(self.cfg.q_min, min(self.cfg.q_max, n_assigned))
             
+            # Execute Destroy & Repair
             partial, removed = d_op(current, q)
             new_sol = r_op(partial, removed)
             new_cost, _ = self.state.solution_cost(new_sol)
             
+            # Calculate Acceptance Criteria
             new_assigned = len(new_sol.all_assigned())
             curr_assigned = len(current.all_assigned())
+            best_assigned = len(best_sol.all_assigned())
             
             accept = False
+            
+            # Priority 1: maximize assigned employees
             if new_assigned > curr_assigned:
                 accept = True
             elif new_assigned == curr_assigned:
-                if new_cost < self.best_cost:
-                    self.best_sol = new_sol.copy()
-                    self.best_cost = new_cost
+                # Priority 2: minimize cost (Simulated Annealing)
+                if new_cost < best_cost:
                     accept = True
-                    no_improve = 0
                 elif new_cost < curr_cost:
                     accept = True
-                elif random.random() < math.exp(-(new_cost - curr_cost) / max(temp, 0.01)):
-                    accept = True
+                else:
+                    # SA Probability
+                    prob = math.exp(-(new_cost - curr_cost) / max(temp, 0.01))
+                    if random.random() < prob:
+                        accept = True
             
+            # Update State
             if accept:
                 current = new_sol
                 curr_cost = new_cost
-                if new_cost < self.best_cost and new_assigned >= len(self.best_sol.all_assigned()):
-                    self.best_sol = new_sol.copy()
-                    self.best_cost = new_cost
+                
+                # Check if this is a new local best for this run
+                if new_assigned > best_assigned:
+                    best_sol = new_sol.copy()
+                    best_cost = new_cost
+                    no_improve = 0
+                elif new_assigned == best_assigned and new_cost < best_cost:
+                    best_sol = new_sol.copy()
+                    best_cost = new_cost
                     no_improve = 0
                 else:
                     no_improve += 1
@@ -1013,16 +1723,8 @@ class ALNS:
                 no_improve += 1
             
             temp *= self.cfg.cooling
-        
-        elapsed = time.time() - t0
-        _, breakdown = self.state.solution_cost(self.best_sol)
-        breakdown['time_sec'] = elapsed
-        breakdown['iterations'] = iteration
-        
-        if verbose:
-            print(f"\nDone in {elapsed:.2f}s, {iteration} iterations")
-        
-        return self.best_sol, breakdown
+            
+        return current, best_sol, best_cost
 
 
 # =============================================================================
@@ -1030,11 +1732,11 @@ class ALNS:
 # =============================================================================
 
 class ResultsVerifier:
-    def __init__(self, state: ProblemState):
+    def __init__(self, state):
         self.state = state
         self.constraints = state.constraints
     
-    def verify_and_display(self, solution: Solution) -> Dict:
+    def verify_and_display(self, solution) -> Dict:
         results = {
             'summary': {},
             'vehicle_schedules': [],
@@ -1051,7 +1753,14 @@ class ResultsVerifier:
             results['all_constraints_satisfied'] = False
         
         total_cost, breakdown = self.state.solution_cost(solution)
-        baseline = sum(self.state.employees[eid].baseline_cost for eid in assigned_ids)
+        
+        # Calculate Base metrics
+        baseline_cost_total = float(self.state.sum_baseline_cost)
+        baseline_time_total = float(self.state.sum_baseline_time)
+        
+        # --- MODIFIED: Calculate Total Weighted Baseline Value ---
+        # Summing the pre-calculated baseline_value (alpha*cost + beta*time)
+        baseline_weighted_total = sum(getattr(self.state.employees[eid], 'baseline_value', 0) for eid in assigned_ids)
         
         results['summary'] = {
             'total_employees': self.state.total_employees,
@@ -1061,13 +1770,29 @@ class ResultsVerifier:
             'vehicles_used': breakdown['vehicles_used'],
             'total_distance_km': round(breakdown['total_distance'], 2),
             'travel_cost': round(breakdown['travel_cost'], 2),
-            'objective': round(breakdown['objective'], 2),
-            'alpha': self.state.alpha,
-            'beta': self.state.beta,
-            'baseline_cost': round(baseline, 2),
-            'savings': round(baseline - breakdown['travel_cost'], 2),
-            'savings_pct': round((baseline - breakdown['travel_cost']) / baseline * 100, 2) if baseline > 0 else 0
+            'total_time': round(breakdown['total_time'], 2),
+            'objective': round(total_cost, 2),
+            'alpha': round(self.state.alpha, 2),
+            'beta': 1 - round(self.state.alpha, 2),
+            'baseline_cost': round(baseline_cost_total, 2),
+            'baseline_time': round(baseline_time_total, 2),
+            # --- MODIFIED: Add Weighted Baseline to summary ---
+            'baseline_weighted': round(baseline_weighted_total, 2),
+            'savings': round(baseline_cost_total - breakdown['travel_cost'], 2),
+            'savings_pct': round((baseline_cost_total - breakdown['travel_cost']) / baseline_cost_total * 100, 2) if baseline_cost_total > 0 else 0,
+            'optimized_pct': round((1.0 - total_cost) * 100, 2)
         }
+        
+        results['employees'] = {}
+        for emp in self.state.employees.values():
+            results['employees'][emp.id] = {}
+            results['employees'][emp.id]['priority'] = emp.priority
+            results['employees'][emp.id]['pickup'] = emp.pickup
+            results['employees'][emp.id]['vehicle'] = '-'
+            results['employees'][emp.id]['pickup_time'] = '-'
+            results['employees'][emp.id]['dropoff_time'] = '-'
+
+        results['Office'] = (float(self.state.office.lat), float(self.state.office.lng))
         
         for schedule in solution.schedules:
             if not schedule.trips:
@@ -1083,6 +1808,10 @@ class ResultsVerifier:
                 },
                 'trips': []
             }
+
+            cost = 0
+            time = 0
+            dist = 0
             
             for i, trip in enumerate(schedule.trips):
                 feasible, details = self.constraints.is_trip_feasible(
@@ -1093,6 +1822,15 @@ class ResultsVerifier:
                 if not feasible:
                     results['all_constraints_satisfied'] = False
                 
+                for emp in trip.employees:
+                    results['employees'][emp]['vehicle'] = schedule.vehicle.id
+                    results['employees'][emp]['pickup_time'] = self._fmt_time(trip.pickup_times[emp])
+                    results['employees'][emp]['dropoff_time'] = self._fmt_time(trip.arrival_at_office)
+                
+                dist += trip.distance_km
+                cost += trip.distance_km * schedule.vehicle.cost_per_km
+                time += trip.arrival_at_office - trip.start_time
+
                 trip_info = {
                     'trip_number': i + 1,
                     'employees': trip.employees,
@@ -1101,6 +1839,7 @@ class ResultsVerifier:
                     'start_location': str(trip.start_location),
                     'arrival_at_office': self._fmt_time(trip.arrival_at_office),
                     'distance_km': round(trip.distance_km, 2),
+                    'route': trip.route,
                     'cost': round(trip.distance_km * schedule.vehicle.cost_per_km, 2),
                     'feasible': feasible,
                     'constraints': {
@@ -1112,6 +1851,9 @@ class ResultsVerifier:
                 
                 sched_info['trips'].append(trip_info)
             
+            sched_info['vehicle']['cost'] = cost
+            sched_info['vehicle']['time'] = time
+            sched_info['vehicle']['distance'] = dist
             results['vehicle_schedules'].append(sched_info)
         
         return results
@@ -1137,9 +1879,14 @@ class ResultsVerifier:
         print(f"\n   Objective Weights:  α={s['alpha']}, β={s['beta']}")
         print(f"   Total Distance:     {s['total_distance_km']:.2f} km")
         print(f"   Travel Cost:        ₹{s['travel_cost']:.2f}")
+        print(f"   Total Time:         {s['total_time']:.2f} min")
         print(f"   Objective Value:    {s['objective']:.2f}")
         print(f"   Baseline Cost:      ₹{s['baseline_cost']:.2f}")
-        print(f"   Savings:            ₹{s['savings']:.2f} ({s['savings_pct']:.1f}%)")
+        print(f"   Baseline Time:      {s['baseline_time']:.2f} min")
+        # --- MODIFIED: Print the new weighted baseline ---
+        print(f"   Baseline Value:   {s['baseline_weighted']:.2f}")
+        print(f"   Savings (Cost):     ₹{s['savings']:.2f} ({s['savings_pct']:.1f}%)")
+        print(f"   Percentage Optimized:     {s['optimized_pct']:.2f}%")
         
         print(f"\n✓ ALL CONSTRAINTS: {'✅ SATISFIED' if results['all_constraints_satisfied'] else '❌ VIOLATIONS'}")
         
@@ -1187,14 +1934,6 @@ class ResultsVerifier:
         print(f"│ {c4_status} CONSTRAINT 4: ALL EMPLOYEES PICKED EXACTLY ONCE".ljust(89) + "│")
         print(f"│   {results['summary']['employees_assigned']}/{results['summary']['total_employees']} employees assigned".ljust(89) + "│")
         print(f"└{'─'*88}┘")
-    
-    def _fmt_time(self, mins) -> str:
-        if isinstance(mins, str):
-            return mins
-        h, m = int(mins // 60), int(mins % 60)
-        return f"{h:02d}:{m:02d}"
-
-
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -1228,19 +1967,20 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
     
     verifier = ResultsVerifier(state)
     results = verifier.verify_and_display(solution)
+    results['breakdown'] = breakdown
     
     if verbose:
         verifier.print_results(results)
     
     return results
 
-# if __name__ == "__main__":
-#     import sys
-#     precompute()
-#     filepath = test_case_path
-#     if len(sys.argv) > 1:
-#         filepath = sys.argv[1]
+if __name__ == "__main__":
+    import sys
     
-#     print(f"Optimizing: {filepath}\n")
-#     results = optimize(filepath)
-#     print(results)
+    precompute()
+    filepath = "Velora/TestCases/TestCase_TC06.xlsx"
+    if len(sys.argv) > 1:
+        filepath = sys.argv[1]
+    
+    print(f"Optimizing: {filepath}\n")
+    results = optimize(filepath)

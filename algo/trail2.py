@@ -468,7 +468,6 @@ class ProblemState:
                  office: Location, metadata: Dict = None):
         self.employees = {e.id: e for e in employees}
         self.vehicles = {v.id: v for v in vehicles}
-        self.EMPLOYEES = list(employees)
         self.emp_list = employees
         self.veh_list = vehicles
         self.office = office
@@ -488,13 +487,28 @@ class ProblemState:
         total_cost = 0.0
         total_dist = 0.0
         total_time = 0.0
-        
+        num_assigned = 0
+        num_vehicles = 0
+        num_trips = 0
+        assigned = {emp: False for emp in self.employees}
+
         for schedule in sol.schedules:
+            if schedule.trips:
+                num_vehicles += 1
             for trip in schedule.trips:
+                num_trips += 1
+                for emp in trip.employees:
+                    assigned[emp] = True
+                    num_assigned += 1
                 total_dist += trip.distance_km
                 total_cost += trip.distance_km * schedule.vehicle.cost_per_km
                 total_time += trip.arrival_at_office - trip.start_time
         
+        for emp in self.employees:
+            if not assigned[emp]:
+                total_cost += self.employees[emp].baseline_cost
+                total_time += self.employees[emp].baseline_time
+
         objective = self.alpha * total_cost / self.sum_baseline_cost + self.beta * total_time / self.sum_baseline_time
         
         return objective, {
@@ -502,9 +516,9 @@ class ProblemState:
             'travel_cost': total_cost,
             'total_distance': total_dist,
             'total_time': total_time,
-            'vehicles_used': sum(1 for s in sol.schedules if s.trips),
-            'total_trips': sol.total_trips(),
-            'served': len(sol.all_assigned())
+            'vehicles_used': num_vehicles,
+            'total_trips': num_trips,
+            'served': num_assigned
         }
 
 
@@ -1602,21 +1616,10 @@ class ALNS:
             # 3. Check against Global Best
             run_assigned = len(run_best_sol.all_assigned())
             
-            if self.global_best_sol is None:
-                global_assigned = 0
-            else:
-                global_assigned = len(self.global_best_sol.all_assigned())
-            
             is_new_global_best = False
             
-            # PRIORITY 1: Assign MORE employees
-            if run_assigned > global_assigned:
+            if run_best_cost < self.global_best_cost:
                 is_new_global_best = True
-            
-            # PRIORITY 2: Same employees, LOWER cost
-            elif run_assigned == global_assigned:
-                if run_best_cost < self.global_best_cost:
-                    is_new_global_best = True
             
             status = ""
             if is_new_global_best:
@@ -1752,8 +1755,8 @@ class ResultsVerifier:
         total_cost, breakdown = self.state.solution_cost(solution)
         
         # Calculate Base metrics
-        baseline_cost_total = sum(self.state.employees[eid].baseline_cost for eid in assigned_ids)
-        baseline_time_total = sum(self.state.employees[eid].baseline_time for eid in assigned_ids)
+        baseline_cost_total = float(self.state.sum_baseline_cost)
+        baseline_time_total = float(self.state.sum_baseline_time)
         
         # --- MODIFIED: Calculate Total Weighted Baseline Value ---
         # Summing the pre-calculated baseline_value (alpha*cost + beta*time)
@@ -1768,7 +1771,7 @@ class ResultsVerifier:
             'total_distance_km': round(breakdown['total_distance'], 2),
             'travel_cost': round(breakdown['travel_cost'], 2),
             'total_time': round(breakdown['total_time'], 2),
-            'objective': round(breakdown['objective'], 2),
+            'objective': round(total_cost, 2),
             'alpha': round(self.state.alpha, 2),
             'beta': 1 - round(self.state.alpha, 2),
             'baseline_cost': round(baseline_cost_total, 2),
@@ -1777,11 +1780,11 @@ class ResultsVerifier:
             'baseline_weighted': round(baseline_weighted_total, 2),
             'savings': round(baseline_cost_total - breakdown['travel_cost'], 2),
             'savings_pct': round((baseline_cost_total - breakdown['travel_cost']) / baseline_cost_total * 100, 2) if baseline_cost_total > 0 else 0,
-            'optimized_pct': round((1.0 - breakdown['objective']) * 100, 2)
+            'optimized_pct': round((1.0 - total_cost) * 100, 2)
         }
         
         results['employees'] = {}
-        for emp in self.state.EMPLOYEES:
+        for emp in self.state.employees.values():
             results['employees'][emp.id] = {}
             results['employees'][emp.id]['priority'] = emp.priority
             results['employees'][emp.id]['pickup'] = emp.pickup
@@ -1975,7 +1978,7 @@ if __name__ == "__main__":
     import sys
     
     precompute()
-    filepath = "TestCases/TestCase_TC02.xlsx"
+    filepath = "Velora/TestCases/TestCase_TC06.xlsx"
     if len(sys.argv) > 1:
         filepath = sys.argv[1]
     

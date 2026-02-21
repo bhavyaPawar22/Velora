@@ -1,15 +1,3 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Velora | Optimization Dashboard</title>
-
-<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
-
 {% set colors = [
 "#081633","#081736","#091839","#0A193C","#0A1A3F","#0B1B42","#0C1C45","#0C1D48","#0D1E4B","#0E1F4E",
 "#0E2051","#0F2154","#102257","#10235A","#11245D","#122560","#122663","#132766","#142869","#14296C",
@@ -59,818 +47,251 @@
 "#FF4081","#F50057","#FF6EC7","#FF1493","#FF00FF"
 ] %}
 
-<style>
-
-* {
-    scrollbar-width: thin;
-    scrollbar-color: #4f7cff rgba(10,20,60,0.8);
-}
-
-html, body {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-}
-
-body {
-    font-family: 'Inter', sans-serif;
-    background: radial-gradient(circle at 20% 20%, #1c2d6b, #0b1437 60%);
-    color: #e8ecff;
-    display: flex;
-}
-
-/* ================= SIDEBAR ================= */
-
-.sidebar {
-    width: 270px;
-    height: 100vh;
-    background: rgba(10,20,60,0.85);
-    backdrop-filter: blur(12px);
-    border-right: 1px solid rgba(255,255,255,0.08);
-    display: flex;
-    flex-direction: column;
-}
-
-.logo {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    color: #38bdf8;
-    text-align: center;
-    padding: 30px 0;
-}
-
-.sidebar-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 20px 20px 20px;
-}
-
-.nav-button {
-    width: 100%;
-    padding: 14px;
-    margin-bottom: 14px;
-    font-family: 'Orbitron', sans-serif;
-    font-weight: 700;
-    font-size: 14px;
-    letter-spacing: 1.5px;
-    text-transform: uppercase;
-    border-radius: 12px;
-    background: transparent;
-    border: 1px solid rgba(255,255,255,0.06);
-    color: #bfc8ff;
-    cursor: pointer;
-    transition: 0.3s ease;
-}
-
-.nav-button:hover {
-    background: rgba(79,124,255,0.15);
-    box-shadow: 0 0 12px rgba(79,124,255,0.4);
-    transform: translateX(4px);
-}
-
-.nav-button.active {
-    background: linear-gradient(90deg,#4f7cff,#8b5cf6);
-    color: white;
-    box-shadow: 0 0 20px rgba(79,124,255,0.6);
-}
-
-.sidebar-footer {
-    padding: 20px;
-    text-align: center;
-    font-size: 12px;
-    color: rgba(255,255,255,0.55);
-    border-top: 1px solid rgba(255,255,255,0.08);
-}
-
-/* ================= CONTENT ================= */
-
-.dashboard-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-}
-
-.upload-btn {
-    padding: 10px 18px;
-    font-family: 'Orbitron', sans-serif;
-    font-size: 13px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    border-radius: 10px;
-    border: none;
-    cursor: pointer;
-    background: linear-gradient(90deg,#4f7cff,#8b5cf6);
-    color: white;
-    box-shadow: 0 0 15px rgba(79,124,255,0.5);
-    transition: 0.3s ease;
-}
-
-.upload-btn:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 0 25px rgba(79,124,255,0.8);
-}
-
-.content {
-    flex: 1;
-    padding: 20px 40px;
-    overflow-y: auto;
-}
-
-.pane { display: none; }
-.pane.active { display: block; }
-
-/* ================= SUMMARY ================= */
-
-.dashboard-title {
-    font-family: 'Orbitron', sans-serif;
-    font-size: 22px;
-    margin-bottom: 20px;
-}
-
-.kpi-row {
-    display: grid;
-    grid-template-columns: repeat(auto-fit,minmax(200px,1fr));
-    gap: 20px;
-    margin-bottom: 40px;
-}
-
-.kpi-card {
-    background: rgba(20,30,80,0.75);
-    border-radius: 16px;
-    padding: 20px;
-    border: 1px solid rgba(255,255,255,0.08);
-}
-
-.summary-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 30px;
-}
-
-.panel {
-    background: rgba(20,30,80,0.75);
-    border-radius: 20px;
-    padding: 25px;
-    border: 1px solid rgba(255,255,255,0.08);
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: rgba(20,30,80,0.7);
-    border-radius: 16px;
-    overflow: hidden;
-}
-
-th, td {
-    padding: 10px;
-    text-align: center;
-}
-
-th {
-    background: rgba(79,124,255,0.2);
-}
-
-tr {
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.map {
-    height: 420px;
-    border-radius: 16px;
-    margin-bottom: 40px;
-}
-
-.route-pill {
-    padding: 4px 10px;
-    border-radius: 20px;
-    background: rgba(79,124,255,0.2);
-}
-
-.route-arrow { margin: 0 6px; }
-.route-office {
-    padding: 4px 10px;
-    border-radius: 20px;
-    background: rgba(34,197,94,0.2);
-}
-.trip-details-row {
-    display: none;
-    background: rgba(15,25,70,0.9);
-}
-
-.trip-details-content {
-    padding: 20px;
-    animation: slideDown 0.3s ease;
-}
-
-.inner-table {
-    width: 100%;
-    border-collapse: collapse;
-    background: rgba(20,30,80,0.9);
-    border-radius: 12px;
-    overflow: hidden;
-}
-
-.inner-table th {
-    background: rgba(79,124,255,0.2);
-}
-
-.inner-table th,
-.inner-table td {
-    padding: 8px;
-    text-align: center;
-    border-bottom: 1px solid rgba(255,255,255,0.06);
-}
-
-.dropoff-row {
-    background: rgba(34,197,94,0.15);
-    color: #86efac;
-}
-
-.trip-row:hover {
-    filter: brightness(1.1);
-}
-
-@keyframes slideDown {
-    from {
-        opacity: 0;
-        transform: translateY(-6px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
-}
-
-canvas {
-    max-width: 500px;
-    max-height: 500px;
-    filter: drop-shadow(0px 10px 25px rgba(79,124,255,0.35));
-}
-
-/* ===============================
-   GLOBAL SCROLLBAR (Chrome, Edge, Safari)
-================================ */
-
-::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
-}
-
-::-webkit-scrollbar-track {
-    background: rgba(10,20,60,0.8);
-}
-
-::-webkit-scrollbar-thumb {
-    background: linear-gradient(
-        180deg,
-        #4f7cff,
-        #8b5cf6
-    );
-    border-radius: 10px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-    background: linear-gradient(
-        180deg,
-        #3b6cff,
-        #7c3aed
-    );
-}
-
-.map-tooltip {
-    font-family: 'Inter', sans-serif;
-    font-size: 12px;
-    background: rgba(20,30,80,0.95);
-    color: #e8ecff;
-    padding: 8px 10px;
-    border-radius: 8px;
-    border: 1px solid rgba(79,124,255,0.4);
-    box-shadow: 0 0 15px rgba(79,124,255,0.5);
-}
-
-.leaflet-tooltip {
-    background: transparent;
-    border: none;
-}
-
-/* ================= CUSTOM MARKERS ================= */
-
-.custom-marker {
-    background: none;
-    border: none;
-}
-
-.marker {
-    width: 30px;
-    height: 30px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    font-size: 14px;
-    box-shadow: 0 0 12px rgba(79,124,255,0.6);
-    transition: 0.3s ease;
-}
-
-.marker:hover {
-    transform: scale(1.15);
-}
-
-/* Office */
-.office-marker {
-    background: linear-gradient(135deg,#22c55e,#16a34a);
-}
-
-/* Employee */
-.employee-marker {
-    background: linear-gradient(135deg,#4f7cff,#8b5cf6);
-}
-
-/* Depot */
-.depot-marker {
-    background: linear-gradient(135deg,#ff9500,#ff6b00);
-}
-</style>
-</head>
-<body>
-
-<div class="sidebar">
-    <div class="logo">VELORA</div>
-
-    <div class="sidebar-content">
-        <button class="nav-button active"
-                onclick="showPane('summary',this)">
-            Summary
-        </button>
-
-        {% for vehicle in data.vehicle_schedules %}
-            <button class="nav-button"
-                    onclick="showPane('vehicle{{ loop.index }}',this)">
-                <i class="fa fa-car" aria-hidden="true"></i>
-                Vehicle {{ vehicle.vehicle.id }}
-            </button>
-        {% endfor %}
-    </div>
-
-    <div class="sidebar-footer">
-        © 2026 Velora.<br>
-        Intelligent Route Optimisation Software.
-    </div>
-</div>
-
-<div class="content">
-
-<!-- ================= SUMMARY ================= -->
-
-<div id="summary" class="pane active">
-
-<div class="dashboard-header">
-    <h1 class="dashboard-title">
-        Route Optimization Dashboard
-    </h1>
-
-    <button class="upload-btn"
-            onclick="window.location.href='/input'">
-        <i class="fa fa-upload"></i>
-        New Testcase
-    </button>
-</div>
-
-<div class="kpi-row">
-    <div class="kpi-card">
-        <h4>Elapsed Time</h4>
-        <h2>{{ data.breakdown.time_sec | round(3) }} s</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Total Employees</h4>
-        <h2>{{ data.summary.total_employees }}</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Assigned</h4>
-        <h2>{{ data.summary.employees_assigned }}</h2>
-    </div> 
-    <div class="kpi-card">
-        <h4>Vehicles Used</h4>
-        <h2>{{ data.summary.vehicles_used }}</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Total Distance</h4>
-        <h2>{{ data.summary.total_distance_km | round(2) }} km</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Optimized Time</h4>
-        <h2>{{ data.summary.total_time | round(2) }} min</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Optimized Cost</h4>
-        <h2>₹{{ data.summary.travel_cost | round(2) }}</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Baseline Cost</h4>
-        <h2>₹{{ data.summary.baseline_cost | round(2) }}</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Baseline Time</h4>
-        <h2>{{ data.summary.baseline_time | round(2) }} min</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>% Optimized</h4>
-        <h2>{{ data.summary.optimized_pct | round(2) }}%</h2>
-    </div>
-</div>
-
-<div class="summary-grid">
-
-    <!-- Employee Assignment Table -->
-    <div class="panel">
-        <h3>Employee Assignments</h3>
-        <table>
-            <tr>
-                <th>Employee</th>
-                <th>Priority</th>
-                <th>Vehicle</th>
-                <th>Pickup Time</th>
-                <th>Drop-off Time</th>
-            </tr>
-            {% set ns = namespace(ind = 0) %}
-            {% for id, emp in data.employees.items() %}
-                <tr style="background-color: {{ colors[ns.ind % (colors | length)] }};">
-                    <td>{{ id }}</td>
-                    <td>{{ emp.priority }}</td>
-                    <td>{{ emp.vehicle }}</td>
-                    <td>{{ emp.pickup_time }}</td>
-                    <td>{{ emp.dropoff_time }}</td>
-                </tr>
-                {% set ns.ind = ns.ind + 1 %}
-            {% endfor %}
-        </table>
-    </div>
-
-    <!-- Donut Charts -->
-    <div class="panel">
-        <h3>Fleet Distribution (COST)</h3>
-        <center><canvas id="costDonut" style="padding-bottom: 25px;"></canvas></center>
-        <h3>Fleet Distribution (TIME)</h3>
-        <center><canvas id="timeDonut" style="padding-top: 25px;"></canvas></center>
-    </div>
-
-</div>
-
-</div>
-
-<!-- VEHICLE PANES -->
-{% for vehicle in data.vehicle_schedules %}
-<div id="vehicle{{ loop.index }}" class="pane">
-    
-<div class="dashboard-header">
-    <h1 class="dashboard-title">
-        Vehicle {{ vehicle.vehicle.id }}
-    </h1>
-
-    <button class="upload-btn"
-            onclick="window.location.href='/input'">
-        <i class="fa fa-upload"></i>
-        New Testcase
-    </button>
-</div>
-
-<div class="kpi-row">
-    <div class="kpi-card">
-        <h4>Category</h4>
-        <h2>{{ vehicle.vehicle.category }}</h2>
-    </div> 
-    <div class="kpi-card">
-        <h4>Capacity</h4>
-        <h2>{{ vehicle.vehicle.capacity }}</h2>
-    </div> 
-    <div class="kpi-card">
-        <h4>Distance</h4>
-        <h2>{{ vehicle.vehicle.distance | round(2) }} km</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Time</h4>
-        <h2>{{ vehicle.vehicle.time | round(2) }} min</h2>
-    </div>
-    <div class="kpi-card">
-        <h4>Cost</h4>
-        <h2>₹{{ vehicle.vehicle.cost | round(2) }}</h2>
-    </div>
-</div>
-
-<div id="{{ vehicle.vehicle.id }}" class="map"></div>
-
-<table>
-<tr>
-<th>Trip</th>
-<th>Route</th>
-<th>Start</th>
-<th>Arrival</th>
-<th>Distance (km)</th>
-<th>Cost</th>
-</tr>
-
-{% set ns = namespace(curr = vehicle.vehicle.id) %}
-{% for trip in vehicle.trips %}
-<tr class="trip-row" 
-    id="{{ vehicle.vehicle.id }}_{{ trip.trip_number }}"
-    onclick="toggleTripDetails('{{ vehicle.vehicle.id }}', {{ trip.trip_number }})" 
-    style="background-color: {{ route_colors[(trip.trip_number - 1) % (route_colors | length)] }};">
-<td>{{ trip.trip_number }}</td>
-<td>
-    <span class="route-office">{{ ns.curr }}</span>
-    <span class="route-arrow">→</span>
-    {% for emp in trip.pickup_sequence %}
-        <span class="route-pill">{{ emp }}</span>
-        <span class="route-arrow">→</span>
-    {% endfor %}
-    <span class="route-office">Office</span>
-</td>
-
-<td>{{ trip.start_time }}</td>
-<td>{{ trip.arrival_at_office }}</td>
-<td>{{ trip.distance_km }}</td>
-<td>{{ trip.cost }}</td>
-</tr>
-<!-- EXPANDABLE DETAILS ROW -->
-<tr class="trip-details-row">
-<td colspan="6">
-    <div class="trip-details-content">
-        <table class="inner-table">
-            <tr>
-                <th>Sequence</th>
-                <th>Employee</th>
-                <th>Pickup Time</th>
-            </tr>
-
-            {% for emp in trip.pickup_sequence %}
-            <tr>
-                <td>{{ loop.index }}</td>
-                <td>{{ emp }}</td>
-                <td>{{ data.employees[emp].pickup_time }}</td>
-            </tr>
-            {% endfor %}
-
-            <tr class="dropoff-row">
-                <td colspan="2"><strong>Office</strong></td>
-                <td><strong>{{ trip.arrival_at_office }}</strong></td>
-            </tr>
-        </table>
-    </div>
-</td>
-</tr>
-    {% set ns.curr = "Office" %}
-{% endfor %}
-
-</table>
-
-</div>
-{% endfor %}
-
-
-</div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<script>
-const data = {{ data|tojson }};
-const route_colors = {{ route_colors|tojson }};
-const pie_colors = {{ pie_colors|tojson }};
-const office = data.Office;
-let maps = {};
-let routes = {};
-
-// ================= CUSTOM ICONS =================
-
-const officeIcon = L.divIcon({
-    className: "custom-marker",
-    html: `<div class="marker office-marker">
-              <i class="fa fa-building"></i>
-           </div>`,
-    iconSize: [30, 30],
-    iconAnchor: [15, 30]
-});
-
-const employeeIcon = L.divIcon({
-    className: "custom-marker",
-    html: `<div class="marker employee-marker">
-              <i class="fa fa-user"></i>
-           </div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 26]
-});
-
-const depotIcon = L.divIcon({
-    className: "custom-marker",
-    html: `<div class="marker depot-marker">
-              <i class="fa fa-car"></i>
-           </div>`,
-    iconSize: [28, 28],
-    iconAnchor: [14, 28]
-});
-
-function showPane(id,btn){
-    document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    document.querySelectorAll('.nav-button').forEach(b=>b.classList.remove('active'));
-    btn.classList.add('active');
-
-    setTimeout(()=>{
-        const mapDiv = document.querySelector(`#${id} .map`);
-        if(mapDiv && maps[mapDiv.id]){
-            maps[mapDiv.id].invalidateSize();
-        }
-    }, 100);
-}
-
-function toggleTripDetails(vehicle, row_n) {
-
-    var row = document.getElementById(`${vehicle}_${row_n}`);
-
-    const detailsRow = row.nextElementSibling;
-
-    const allDetails = document.querySelectorAll('.trip-details-row');
-
-    // Close all other expanded rows
-    allDetails.forEach(r => {
-        if (r !== detailsRow) {
-            r.style.display = "none";
-        }
-    });
-
-    // Reset color of all routes
-    for (let rn in routes[vehicle]){
-        routes[vehicle][rn].setStyle({
-            color: route_colors[(rn - 1) % route_colors.length]
-        });
-    }
-
-    // Toggle current
-    if (detailsRow.style.display === "table-row") {
-        detailsRow.style.display = "none";
-        routes[vehicle][row_n].setStyle({
-            color: route_colors[(row_n - 1) % route_colors.length]
-        });
-    } else {
-        detailsRow.style.display = "table-row";
-        routes[vehicle][row_n].setStyle({
-            color: "red"
-        });
-        routes[vehicle][row_n].bringToFront();
-        maps[vehicle].fitBounds(routes[vehicle][row_n].getBounds(), {
-            padding: [40, 40],   // space around route
-            maxZoom: 15,
-            animate: true,
-            duration: 0.8
-        });
-    }
-}
-
-/* ================= MAP INITIALIZATION ================= */
-
-data.vehicle_schedules.forEach((vehicle,index)=>{
-    const map = L.map(vehicle.vehicle.id).setView([office[0],office[1]],12);
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-        attribution:'© OpenStreetMap'
-    }).addTo(map);
-
-    maps[vehicle.vehicle.id] = map; 
-    routes[vehicle.vehicle.id] = {};
-    
-    const start = vehicle.vehicle.start_location.replace(/[()]/g,"").split(",");
-    let depotMarker = L.marker([parseFloat(start[0]), parseFloat(start[1])], { icon: depotIcon })
-    .addTo(map);
-    depotMarker.bindTooltip(`
-        <div class="map-tooltip">
-            <strong>Vehicle:</strong> ${vehicle.vehicle.id}<br>
-            <strong>Depot:</strong> Start Location<br>
-            <strong>Capacity:</strong> ${vehicle.vehicle.capacity}
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+        <title>Velora | Optimization Dashboard</title>
+
+        <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
+        <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
+        <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/output.css') }}">
+    </head>
+    <body>
+        <div class="sidebar">
+            <div class="logo">VELORA</div>
+            <div class="sidebar-content">
+                <button class="nav-button active"
+                        onclick="showPane('summary',this)">
+                    Summary
+                </button>
+
+                {% for vehicle in data.vehicle_schedules %}
+                    <button class="nav-button"
+                            onclick="showPane('vehicle{{ loop.index }}',this)">
+                        <i class="fa fa-car" aria-hidden="true"></i>
+                        Vehicle {{ vehicle.vehicle.id }}
+                    </button>
+                {% endfor %}
+            </div>
+
+            <div class="sidebar-footer">
+                © 2026 Velora.<br>
+                Intelligent Route Optimisation Software.
+            </div>
         </div>
-    `, {
-        direction: "top",
-        offset: [0, -10],
-        sticky: true
-    });
-    
-    let officeMarker = L.marker([office[0], office[1]], { icon: officeIcon })
-    .addTo(map);
-    officeMarker.bindTooltip(`
-        <div class="map-tooltip">
-            <strong>Office</strong><br>
-            Central Drop-off Hub
-        </div>
-    `, {
-        direction: "top",
-        offset: [0, -10],
-        sticky: true
-    });
 
-    vehicle.trips.forEach(trip=>{
-        const coordinates = trip.route.map(coord => [coord[0], coord[1]]);
-        routes[vehicle.vehicle.id][trip.trip_number] = L.polyline(coordinates,{
-            color: route_colors[(trip.trip_number - 1) % route_colors.length],
-            zIndexOffset: 0,
-            weight:4
-        }).addTo(map);
+        <div class="content">
+            <!-- ================= SUMMARY ================= -->
+            <div id="summary" class="pane active">
+                <div class="dashboard-header">
+                    <h1 class="dashboard-title">
+                        Route Optimization Dashboard
+                    </h1>
 
-        routes[vehicle.vehicle.id][trip.trip_number].on('click', function(){
-            toggleTripDetails(vehicle.vehicle.id, trip.trip_number);
-        });
-        
-        trip.employees.forEach(emp=>{
-            let point = data.employees[emp].pickup;
-            let emp_marker = L.marker([point.lat, point.lng], { icon: employeeIcon }).addTo(map);
-            emp_marker.bindTooltip(`
-                <div class="map-tooltip">
-                    <strong>Employee:</strong> ${emp}<br>
-                    <strong>Priority:</strong> ${data.employees[emp].priority}<br>
-                    <strong>Trip:</strong> ${trip.trip_number}<br>
-                    <strong>Pickup:</strong> ${data.employees[emp].pickup_time}<br>
-                    <strong>Drop:</strong> ${data.employees[emp].dropoff_time}
+                    <button class="upload-btn"
+                            onclick="window.location.href='/input'">
+                        <i class="fa fa-upload"></i>
+                        New Testcase
+                    </button>
                 </div>
-            `, {
-                direction: "top",
-                offset: [0, -10],
-                opacity: 1,
-                sticky: true
-            });
-            emp_marker.on('click', function(){
-                toggleTripDetails(vehicle.vehicle.id, trip.trip_number);
-            });
-        });
-    });
-});
 
-/* ================= DONUT CHARTS ================= */
+                <div class="kpi-row">
+                    <div class="kpi-card">
+                        <h4>Elapsed Time</h4>
+                        <h2>{{ data.breakdown.time_sec | round(3) }} s</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Total Employees</h4>
+                        <h2>{{ data.summary.total_employees }}</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Assigned</h4>
+                        <h2>{{ data.summary.employees_assigned }}</h2>
+                    </div> 
+                    <div class="kpi-card">
+                        <h4>Vehicles Used</h4>
+                        <h2>{{ data.summary.vehicles_used }}</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Total Distance</h4>
+                        <h2>{{ data.summary.total_distance_km | round(2) }} km</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Optimized Time</h4>
+                        <h2>{{ data.summary.total_time | round(2) }} min</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Optimized Cost</h4>
+                        <h2>₹{{ data.summary.travel_cost | round(2) }}</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Baseline Cost</h4>
+                        <h2>₹{{ data.summary.baseline_cost | round(2) }}</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Baseline Time</h4>
+                        <h2>{{ data.summary.baseline_time | round(2) }} min</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>% Optimized</h4>
+                        <h2>{{ data.summary.optimized_pct | round(2) }}%</h2>
+                    </div>
+                </div>
 
-let ids=[],costs=[],times=[];
-data.vehicle_schedules.forEach(vehicle=>{
-    ids.push(vehicle.vehicle.id);
-    costs.push(vehicle.vehicle.cost);
-    times.push(vehicle.vehicle.time);
-});
+                <div class="summary-grid">
 
-new Chart(document.getElementById("timeDonut"), {
-    type: "doughnut",
-    data: {
-        labels: ids,
-        datasets: [{
-            data: times,
-            backgroundColor: pie_colors,
-            borderColor: "#0b1437",
-            borderWidth: 3,
-            hoverOffset: 12
-        }]
-    },
-    options: {
-        cutout: "65%",
-        plugins: {
-            legend: {
-                position: "top",
-                labels: {
-                    color: "#e8ecff",
-                    padding: 20,
-                    boxWidth: 18
-                }
-            }
-        }
-    }
-});
+                    <!-- Employee Assignment Table -->
+                    <div class="panel">
+                        <h3>Employee Assignments</h3>
+                        <table>
+                            <tr>
+                                <th>Employee</th>
+                                <th>Priority</th>
+                                <th>Vehicle</th>
+                                <th>Pickup Time</th>
+                                <th>Drop-off Time</th>
+                            </tr>
+                            {% set ns = namespace(ind = 0) %}
+                            {% for id, emp in data.employees.items() %}
+                                <tr style="background-color: {{ colors[ns.ind % (colors | length)] }};">
+                                    <td>{{ id }}</td>
+                                    <td>{{ emp.priority }}</td>
+                                    <td>{{ emp.vehicle }}</td>
+                                    <td>{{ emp.pickup_time }}</td>
+                                    <td>{{ emp.dropoff_time }}</td>
+                                </tr>
+                                {% set ns.ind = ns.ind + 1 %}
+                            {% endfor %}
+                        </table>
+                    </div>
 
-new Chart(document.getElementById("costDonut"), {
-    type: "doughnut",
-    data: {
-        labels: ids,
-        datasets: [{
-            data: costs,
-            backgroundColor: pie_colors,
-            borderColor: "#0b1437",
-            borderWidth: 3,
-            hoverOffset: 12
-        }]
-    },
-    options: {
-        cutout: "65%",
-        plugins: {
-            legend: {
-                position: "top",
-                labels: {
-                    color: "#e8ecff",
-                    padding: 20,
-                    boxWidth: 18
-                }
-            }
-        }
-    }
-});
+                    <!-- Donut Charts -->
+                    <div class="panel">
+                        <h3>Fleet Distribution (COST)</h3>
+                        <center><canvas id="costDonut" style="padding-bottom: 25px;"></canvas></center>
+                        <h3>Fleet Distribution (TIME)</h3>
+                        <center><canvas id="timeDonut" style="padding-top: 25px;"></canvas></center>
+                    </div>
+                </div>
+            </div>
 
+            <!-- VEHICLE PANES -->
+            {% for vehicle in data.vehicle_schedules %}
+            <div id="vehicle{{ loop.index }}" class="pane">
+                    
+                <div class="dashboard-header">
+                    <h1 class="dashboard-title">
+                        Vehicle {{ vehicle.vehicle.id }}
+                    </h1>
 
-</script>
+                    <button class="upload-btn"
+                            onclick="window.location.href='/input'">
+                        <i class="fa fa-upload"></i>
+                        New Testcase
+                    </button>
+                </div>
 
-</body>
+                <div class="kpi-row">
+                    <div class="kpi-card">
+                        <h4>Category</h4>
+                        <h2>{{ vehicle.vehicle.category }}</h2>
+                    </div> 
+                    <div class="kpi-card">
+                        <h4>Capacity</h4>
+                        <h2>{{ vehicle.vehicle.capacity }}</h2>
+                    </div> 
+                    <div class="kpi-card">
+                        <h4>Distance</h4>
+                        <h2>{{ vehicle.vehicle.distance | round(2) }} km</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Time</h4>
+                        <h2>{{ vehicle.vehicle.time | round(2) }} min</h2>
+                    </div>
+                    <div class="kpi-card">
+                        <h4>Cost</h4>
+                        <h2>₹{{ vehicle.vehicle.cost | round(2) }}</h2>
+                    </div>
+                </div>
+
+                <div id="{{ vehicle.vehicle.id }}" class="map"></div>
+
+                <table>
+                <tr>
+                <th>Trip</th>
+                <th>Route</th>
+                <th>Start</th>
+                <th>Arrival</th>
+                <th>Distance (km)</th>
+                <th>Cost</th>
+                </tr>
+
+                {% set ns = namespace(curr = vehicle.vehicle.id) %}
+                {% for trip in vehicle.trips %}
+                <tr class="trip-row" 
+                    id="{{ vehicle.vehicle.id }}_{{ trip.trip_number }}"
+                    onclick="toggleTripDetails('{{ vehicle.vehicle.id }}', {{ trip.trip_number }})" 
+                    style="background-color: {{ route_colors[(trip.trip_number - 1) % (route_colors | length)] }};">
+                    <td>{{ trip.trip_number }}</td>
+                    <td>
+                        <span class="route-office">{{ ns.curr }}</span>
+                        <span class="route-arrow">→</span>
+                        {% for emp in trip.pickup_sequence %}
+                            <span class="route-pill">{{ emp }}</span>
+                            <span class="route-arrow">→</span>
+                        {% endfor %}
+                        <span class="route-office">Office</span>
+                    </td>
+
+                    <td>{{ trip.start_time }}</td>
+                    <td>{{ trip.arrival_at_office }}</td>
+                    <td>{{ trip.distance_km }}</td>
+                    <td>{{ trip.cost }}</td>
+                </tr>
+                <!-- EXPANDABLE DETAILS ROW -->
+                <tr class="trip-details-row">
+                <td colspan="6">
+                    <div class="trip-details-content">
+                        <table class="inner-table">
+                            <tr>
+                                <th>Sequence</th>
+                                <th>Employee</th>
+                                <th>Pickup Time</th>
+                            </tr>
+
+                            {% for emp in trip.pickup_sequence %}
+                            <tr>
+                                <td>{{ loop.index }}</td>
+                                <td>{{ emp }}</td>
+                                <td>{{ data.employees[emp].pickup_time }}</td>
+                            </tr>
+                            {% endfor %}
+
+                            <tr class="dropoff-row">
+                                <td colspan="2"><strong>Office</strong></td>
+                                <td><strong>{{ trip.arrival_at_office }}</strong></td>
+                            </tr>
+                        </table>
+                    </div>
+                </td>
+                </tr>
+                    {% set ns.curr = "Office" %}
+                {% endfor %}
+                </table>
+            </div>
+            {% endfor %}
+        </div>
+        <script>
+            const data = {{ data|tojson }};
+            const route_colors = {{ route_colors|tojson }};
+            const pie_colors = {{ pie_colors|tojson }};
+        </script>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="{{ url_for('static', filename='js/final.js') }}"></script>
+    </body>
 </html>
