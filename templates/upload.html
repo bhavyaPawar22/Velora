@@ -5,10 +5,15 @@
         <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600&family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
         <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/input.css') }}">
         <title>Velora | Route Optimisation</title>
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/icon.png') }}">
+        <link rel="shortcut icon" href="{{ url_for('static', filename='img/icon.png') }}">
     </head>
     <body>
         <header>
-            <div class="logo">VELORA</div>
+            <div class="logo">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" 
+                    alt="Velora Logo">
+            </div>
         </header>
 
         <section class="hero">

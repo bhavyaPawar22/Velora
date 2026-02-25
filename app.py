@@ -1,5 +1,5 @@
 from flask import *
-import solution as sol
+import optimize.main as sol
 
 sol.precompute()
 
@@ -20,7 +20,7 @@ def output():
         if file.filename == '':
             return "No selected file", 400
         if file and file.filename.endswith(('.xls', '.xlsx')):
-            res = sol.optimize(file, verbose=True)
+            res = sol.optimize(file, verbose=False)
             return render_template('final.html', data = res)
         else:
             return "Invalid file format. Please upload an Excel file.", 400

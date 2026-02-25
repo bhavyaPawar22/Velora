@@ -6,7 +6,7 @@
 }
 
 body {
-    background: radial-gradient(circle at 20% 20%, #1c2d6b, #0b1437 60%);
+    background: radial-gradient(circle at 50% 50%, #1c2d6b, #0b1437 60%);
     color: #fff;
     min-height: 100vh;
     display: flex;
@@ -21,13 +21,22 @@ header {
 }
 
 .logo {
-    font-family: 'Orbitron', sans-serif;
-    filter: brightness(1.2) contrast(1.1);
-    font-size: 24px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    color: #38bdf8;
-    padding: 10px 0 0 30px;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 0 0;
+}
+
+.logo img {
+    max-width: 260px;   /* adjust size */
+    height: auto;
+    object-fit: contain;
+    filter: brightness(1.1) drop-shadow(0 0 15px rgba(79,124,255,0.6));
+    transition: 0.3s ease;
+}
+
+.logo img:hover {
+    transform: scale(1.05);
 }
 
 .hero {

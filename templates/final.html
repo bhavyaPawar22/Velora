@@ -1,78 +1,53 @@
-{% set colors = [
-"#081633","#081736","#091839","#0A193C","#0A1A3F","#0B1B42","#0C1C45","#0C1D48","#0D1E4B","#0E1F4E",
-"#0E2051","#0F2154","#102257","#10235A","#11245D","#122560","#122663","#132766","#142869","#14296C",
-"#152A6F","#162B72","#162C75","#172D78","#182E7B","#182F7E","#193081","#1A3184","#1A3287","#1B338A",
-"#1C348D","#1C3590","#1D3693","#1E3796","#1E3899","#1F399C","#203A9F","#203BA2","#213CA5","#223DA8",
-"#223EAB","#233FAE","#2440B1","#2441B4","#2542B7","#2643BA","#2644BD","#2745C0","#2846C3","#2847C6",
-"#2948C9","#2A49CC","#2A4ACF","#2B4BD2","#2C4CD5","#2C4DD8","#2D4EDB","#2E4FDE","#2E50E1","#2F51E4",
-"#3052E7","#3053EA","#3154ED","#3255F0","#3256F3","#3357F6","#3458F9","#3459FC","#355AFF","#365BFF",
-"#365CFF","#375DFF","#385EFF","#385FFF","#3960FF","#3961FF","#3962FF","#3963FF","#3964FF","#3965E9",
-"#3864E6","#3763E3","#3662E0","#3561DD","#3460DA","#335FD7","#325ED4","#315DD1","#305CCE","#2F5BCB",
-"#2E5AC8","#2D59C5","#2C58C2","#2B57BF","#2A56BC","#2955B9","#2854B6","#2753B3","#2652B0","#2551AD"
-] %}
-
-{% set route_colors = [
-"#0A1A4F",
-"#0E2370",
-"#122C91",
-"#1635B2",
-"#1A3ED3",
-"#1E47F4",
-"#2A55FF",
-"#3563FF",
-"#4171FF",
-"#4D7FFF",
-"#3C8DFF",
-"#2A9BFF",
-"#18A9FF",
-"#06B7FF",
-"#00C6F5",
-"#009EDC",
-"#2A7CFF",
-"#5A5CFF",
-"#7A3CFF",
-"#9A1CFF"
-] %}
-
-{% set pie_colors = [
-"#FF3B30","#FF6B00","#FF9500","#FFCC00","#FFD60A",
-"#34C759","#30D158","#00C853","#00E676","#00BFA5",
-"#00BCD4","#00B0FF","#0091EA","#2979FF","#3D5AFE",
-"#5856D6","#7C4DFF","#9C27B0","#E040FB","#D500F9",
-"#FF2D55","#FF4081","#F50057","#C51162","#E91E63",
-"#FF1744","#D50000","#FF5252","#FF7043","#FF8A65",
-"#FFAB40","#FFC400","#AEEA00","#76FF03","#64DD17",
-"#1DE9B6","#00E5FF","#18FFFF","#40C4FF","#448AFF",
-"#536DFE","#651FFF","#AA00FF","#C51162","#FF80AB",
-"#FF4081","#F50057","#FF6EC7","#FF1493","#FF00FF"
-] %}
-
 <!DOCTYPE html>
 <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
         <title>Velora | Optimization Dashboard</title>
+
+        <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/icon.png') }}">
+        <link rel="shortcut icon" href="{{ url_for('static', filename='img/icon.png') }}">
 
         <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/4.7.0/css/font-awesome.min.css">
         <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/output.css') }}">
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     </head>
     <body>
         <div class="sidebar">
-            <div class="logo">VELORA</div>
+            <div class="logo">
+                <img src="{{ url_for('static', filename='img/logo.png') }}" 
+                    alt="Velora Logo">
+            </div>
             <div class="sidebar-content">
-                <button class="nav-button active"
+                <button class="nav-button active" id="summary-bar"
                         onclick="showPane('summary',this)">
                     Summary
                 </button>
+                
+                <button class="nav-button" id="employees-bar"
+                        onclick="showPane('employees',this)">
+                    Employees
+                </button>
+
+                {% if data.violations.total_violations > 0 %}
+                <button class="nav-button" id="violations-bar"
+                        onclick="showPane('violations',this)">
+                    Violations
+                </button>
+                {% endif %}
+
+                {% if data.summary.total_employees - data.summary.employees_assigned > 0 %}
+                <button class="nav-button" id="unassigned-bar"
+                        onclick="showPane('unassigned',this)">
+                    Unassigned
+                </button>
+                {% endif %}
 
                 {% for vehicle in data.vehicle_schedules %}
-                    <button class="nav-button"
-                            onclick="showPane('vehicle{{ loop.index }}',this)">
+                    <button class="nav-button" id="button{{ vehicle.vehicle.id }}"
+                            onclick="showPane('vehicle{{ vehicle.vehicle.id }}',this)">
                         <i class="fa fa-car" aria-hidden="true"></i>
                         Vehicle {{ vehicle.vehicle.id }}
                     </button>
@@ -143,51 +118,408 @@
                     </div>
                 </div>
 
-                <div class="summary-grid">
+                <div class="summary-bottom-layout panel">
+                    <div class="summary-left-layout">
+                        <!-- OPTIMIZATION DATA -->
 
-                    <!-- Employee Assignment Table -->
-                    <div class="panel">
-                        <h3>Employee Assignments</h3>
-                        <table>
-                            <tr>
-                                <th>Employee</th>
-                                <th>Priority</th>
-                                <th>Vehicle</th>
-                                <th>Pickup Time</th>
-                                <th>Drop-off Time</th>
-                            </tr>
-                            {% set ns = namespace(ind = 0) %}
-                            {% for id, emp in data.employees.items() %}
-                                <tr style="background-color: {{ colors[ns.ind % (colors | length)] }};">
-                                    <td>{{ id }}</td>
-                                    <td>{{ emp.priority }}</td>
-                                    <td>{{ emp.vehicle }}</td>
-                                    <td>{{ emp.pickup_time }}</td>
-                                    <td>{{ emp.dropoff_time }}</td>
+                        <div class="optimisation-layout">
+                            <h2 class="fleet-title">Optimization Overview</h2>
+                            <div class="gauge-row">
+                                <div class="gauge-container">
+                                    <canvas id="timeoptimizedGauge"></canvas>
+                                    <div class="gauge-value">
+                                        {{ ((1.0 - data.summary.total_time / data.summary.baseline_time) * 100) | round(2) }}% <br> TIME
+                                    </div>
+                                </div>
+                                <div class="gauge-container">
+                                    <canvas id="costoptimizedGauge"></canvas>
+                                    <div class="gauge-value">
+                                        {{ ((1.0 - data.summary.travel_cost / data.summary.baseline_cost) * 100) | round(2) }}% <br> COST
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- CONSTRAINT HEALTH -->
+                        <div class="constraint-health-table">
+                            <h2 class="fleet-title">Constraint Health Overview</h2>
+
+                            <div class="health-metrics">
+
+                                <div class="health-card green"
+                                    onclick="showPane('employees', document.getElementById('employees-bar')); filterEmployees('satisfied')">
+                                    <h4>Fully Satisfied</h4>
+                                    <h2>{{ data.summary.satisfied_pct }}%</h2>
+                                </div>
+
+                                <div class="health-card red"
+                                    onclick="goToViolation('vehicle-type-section')">
+                                    <h4>Vehicle Type Violations</h4>
+                                    <h2>{{ data.summary.vehicle_type_violation_pct }}%</h2>
+                                </div>
+
+                                <div class="health-card orange"
+                                    onclick="goToViolation('sharing-section')">
+                                    <h4>Sharing Violations</h4>
+                                    <h2>{{ data.summary.sharing_violation_pct }}%</h2>
+                                </div>
+
+                                <div class="health-card yellow"
+                                    onclick="goToViolation('time-section')">
+                                    <h4>Time Violations</h4>
+                                    <h2>{{ data.summary.time_violation_pct }}%</h2>
+                                </div>
+
+                            </div>
+                        </div>
+                        
+                        <!-- LEFT: VEHICLE TABLE -->
+                        <div class="summary-vehicle-table">
+
+                            <h2 class="fleet-title">Fleet Overview</h2>
+
+                            <table id="vehicle-table">
+                                <tr>
+                                    <th>Vehicle</th>
+                                    <th>Category</th>
+                                    <th>Capacity</th>
+                                    <th>Vehicle Type</th>
                                 </tr>
-                                {% set ns.ind = ns.ind + 1 %}
-                            {% endfor %}
-                        </table>
+
+                                {% for id, vehicle in data.vehicles.items() %}
+                                {% if vehicle.used %}
+                                <tr class="vehicle-row" data-category="used" onclick="goToVehicle('{{ id }}')">
+                                {% else %}
+                                <tr class="vehicle-row" data-category="un-used">
+                                {% endif %}
+                                    <td>{{ id }}</td>
+                                    <td>{{ vehicle.category }}</td>
+                                    <td>{{ vehicle.capacity }}</td>
+                                    <td>{{ vehicle.vehicle_type }}</td>
+                                </tr>
+                                {% endfor %}
+                            </table>
+
+                        </div>
                     </div>
 
-                    <!-- Donut Charts -->
-                    <div class="panel">
-                        <h3>Fleet Distribution (COST)</h3>
-                        <center><canvas id="costDonut" style="padding-bottom: 25px;"></canvas></center>
-                        <h3>Fleet Distribution (TIME)</h3>
-                        <center><canvas id="timeDonut" style="padding-top: 25px;"></canvas></center>
+                    <!-- RIGHT: DONUT COLUMN -->
+                    <div class="summary-charts-column">
+                        <h2 class="fleet-title">Distribution Charts</h2>
+
+                        <div class="chart-block">
+                            <canvas id="costDonut"></canvas>
+                        </div>
+
+                        <div class="chart-block">
+                            <canvas id="timeDonut"></canvas>
+                        </div>
+
                     </div>
+
+                </div>
+            </div>
+            <div id="employees" class="pane">
+                <div class="dashboard-header">
+                    <h1 class="dashboard-title">
+                        Employees
+                    </h1>
+
+                    <button class="upload-btn"
+                            onclick="window.location.href='/input'">
+                        <i class="fa fa-upload"></i>
+                        New Testcase
+                    </button>
+                </div>
+                <!-- EMPLOYEE OVERVIEW SECTION -->
+                <div class="employee-overview-layout">
+
+                    <!-- LEFT: 4 KPI CARDS -->
+                    <div class="employee-kpis">
+
+                        <div class="kpi-card emp-filter active-kpi" onclick="filterEmployees('all', this)">
+                            <h4>Total Employees</h4>
+                            <h2>{{ data.summary.total_employees }}</h2>
+                        </div>
+
+                        <div class="kpi-card emp-filter" onclick="filterEmployees('satisfied', this)">
+                            <h4>Satisfied</h4>
+                            <h2>{{ data.summary.employees_assigned - data.summary.employees_compromised }}</h2>
+                        </div>
+
+                        <div class="kpi-card emp-filter" onclick="filterEmployees('compromised', this)">
+                            <h4>Compromised</h4>
+                            <h2>{{ data.summary.employees_compromised }}</h2>
+                        </div>
+
+                        <div class="kpi-card emp-filter" onclick="filterEmployees('unassigned', this)">
+                            <h4>Unassigned</h4>
+                            <h2>{{ data.summary.total_employees - data.summary.employees_assigned }}</h2>
+                        </div>
+
+                    </div>
+
+                    <!-- RIGHT: PIE CHART -->
+                    <div class="employee-chart">
+                        <canvas id="employeeDonut"></canvas>
+                        <div id="employeeLegend" class="employee-legend"></div>
+                    </div>
+
+                </div>
+                <!-- Employee Assignment Table -->
+                <div class="panel">
+                    <h3>Employees Table</h3>
+                    <table id="employees-table">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Priority</th>
+                            <th>Vehicle</th>
+                            <th>Sharing</th>
+                            <th>Pickup Time</th>
+                            <th>Drop-off Time</th>
+                        </tr>
+                        {% set sharing_word_count = {1: 'single', 2: 'double', 3: 'triple'} %}
+                        {% for id, emp in data.employees.items() %}
+
+                            {% if not emp.assigned %}
+                                {% set category = "unassigned" %}
+                                <tr class="emp_row"
+                                    data-category="unassigned"
+                                    onclick="showEmployee('{{ id }}')">
+
+                            {% elif (emp.unsatisfied | length) > 0 %}
+                                {% set category = "compromised" %}
+                                <tr class="emp_row"
+                                    data-category="compromised"
+                                    onclick="showEmployee('{{ id }}')">
+
+                            {% else %}
+                                {% set category = "satisfied" %}
+                                <tr class="emp_row"
+                                    data-category="satisfied"
+                                    onclick="showEmployee('{{ id }}')">
+                            {% endif %}
+                                <td>{{ id }}</td>
+                                <td>{{ emp.priority }}</td>
+                                <td>{{ emp.vehicle }}</td>
+                                <td>{{ sharing_word_count[emp.sharing] }}</td>
+                                <td>{{ emp.pickup_time }}</td>
+                                <td>{{ emp.dropoff_time }}</td>
+                            </tr>
+                        {% endfor %}
+                    </table>
                 </div>
             </div>
 
-            <!-- VEHICLE PANES -->
-            {% for vehicle in data.vehicle_schedules %}
-            <div id="vehicle{{ loop.index }}" class="pane">
-                    
+            <!-- VIOLATIONS PANE -->
+            {% if data.violations.total_violations > 0 %}
+            <div id="violations" class="pane">
+
                 <div class="dashboard-header">
                     <h1 class="dashboard-title">
-                        Vehicle {{ vehicle.vehicle.id }}
+                        Constraint Violations
                     </h1>
+
+                    <button class="upload-btn"
+                            onclick="window.location.href='/input'">
+                        <i class="fa fa-upload"></i>
+                        New Testcase
+                    </button>
+                </div>
+
+                <!-- VIOLATION OVERVIEW SECTION -->
+                <div class="employee-overview-layout">
+
+                    <!-- LEFT: KPI CARDS -->
+                    <div class="employee-kpis">
+
+                        <div class="kpi-card violation-filter active-kpi"
+                            id="total-violations-kpi"
+                            onclick="filterViolation('all', this)">
+                            <h4>Total Violations</h4>
+                            <h2>{{ data.violations.total_violations }}</h2>
+                        </div>
+
+                        <div class="kpi-card violation-filter"
+                            id="vehicle-type-violations-kpi"
+                            onclick="filterViolation('vehicle', this)">
+                            <h4>Vehicle Type</h4>
+                            <h2>{{ data.violations.vehicle_type_violations | length }}</h2>
+                        </div>
+
+                        <div class="kpi-card violation-filter"
+                            id="sharing-violations-kpi"
+                            onclick="filterViolation('sharing', this)">
+                            <h4>Sharing</h4>
+                            <h2>{{ data.violations.sharing_violations | length }}</h2>
+                        </div>
+
+                        <div class="kpi-card violation-filter"
+                            id="time-violations-kpi"
+                            onclick="filterViolation('time', this)">
+                            <h4>Time</h4>
+                            <h2>{{ data.violations.time_violations | length }}</h2>
+                        </div>
+
+                    </div>
+
+                    <!-- RIGHT: PIE CHART -->
+                    <div class="employee-chart">
+                        <canvas id="violationDonut"></canvas>
+                        <div id="violationLegend" class="employee-legend"></div>
+                    </div>
+
+                </div>
+
+                <!-- VEHICLE TYPE -->
+                {% if data.violations.vehicle_type_violations|length > 0 %}
+                <div class="panel" id="vehicle-type-section">
+                    <h3>Vehicle Type Violations</h3>
+                    <table id="vehicle-type-violations-table">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Vehicle</th>
+                            <th>Preferred</th>
+                            <th>Actual</th>
+                        </tr>
+                        {% for v in data.violations.vehicle_type_violations %}
+                        <tr onclick="showEmployee('{{ v.employee }}')" class="violation-row">
+                            <td>{{ v.employee }}</td>
+                            <td>{{ v.vehicle }}</td>
+                            <td>{{ v.preferred }}</td>
+                            <td>{{ v.actual }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- SHARING -->
+                {% if data.violations.sharing_violations|length > 0 %}
+                <div class="panel" id="sharing-section">
+                    <h3>Sharing Violations</h3>
+                    <table id="sharing-violations-table">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Vehicle</th>
+                            <th>Preferred</th>
+                            <th>Actual</th>
+                        </tr>
+                        {% for v in data.violations.sharing_violations %}
+                        <tr onclick="showEmployee('{{ v.employee }}')" class="violation-row">
+                            <td>{{ v.employee }}</td>
+                            <td>{{ v.vehicle }}</td>
+                            <td>{{ v.preferred }}</td>
+                            <td>{{ v.actual }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                {% endif %}
+
+                <!-- TIME -->
+                {% if data.violations.time_violations|length > 0 %}
+                <div class="panel" id="time-section">
+                    <h3>Time Violations</h3>
+                    <table id="time-violations-table">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Vehicle</th>
+                            <th>Preferred</th>
+                            <th>Actual</th>
+                        </tr>
+                        {% for v in data.violations.time_violations %}
+                        <tr onclick="showEmployee('{{ v.employee }}')" class="violation-row">
+                            <td>{{ v.employee }}</td>
+                            <td>{{ v.vehicle }}</td>
+                            <td>{{ v.preferred }}</td>
+                            <td>{{ v.actual }}</td>
+                        </tr>
+                        {% endfor %}
+                    </table>
+                </div>
+                {% endif %}
+
+            </div>
+            {% endif %}
+            
+            <!-- UNASSIGNED PANE -->
+            {% if data.summary.total_employees - data.summary.employees_assigned > 0 %}
+            <div id="unassigned" class="pane">
+
+                <div class="dashboard-header">
+                    <h1 class="dashboard-title">
+                        Unassigned Employees
+                    </h1>
+
+                    <button class="upload-btn"
+                            onclick="window.location.href='/input'">
+                        <i class="fa fa-upload"></i>
+                        New Testcase
+                    </button>
+                </div>
+
+                <!-- Map -->
+                <div id="unassigned-map" class="map"></div>
+
+                <!-- Table -->
+                <div class="panel">
+                    <h3>Unassigned Employees</h3>
+
+                    <table id="unassigned-table">
+                        <tr>
+                            <th>Employee</th>
+                            <th>Priority</th>
+                            <th>Vehicle Preference</th>
+                            <th>Sharing Preference</th>
+                            <th>Away</th>
+                            <th>Baseline Cost</th>
+                            <th>Baseline Time</th>
+                        </tr>
+
+                        {% for id, emp in data.employees.items() %}
+                            {% if not emp.assigned %}
+                            <tr class="unassigned_row" onclick="showEmployeeRoute('{{id}}')">
+                                <td>{{ id }}</td>
+                                <td>{{ emp.priority }}</td>
+                                <td>{{ emp.vehicle_preference }}</td>
+                                <td>{{ emp.sharing_preference }}</td>
+                                <td>{{ emp.distance | round(2) }} km</td>
+                                <td>₹{{ emp.baseline_cost | round(2) }}</td>
+                                <td>{{ emp.baseline_time | round(2) }} min</td>
+                            </tr>
+                            {% endif %}
+                        {% endfor %}
+                    </table>
+                </div>
+
+            </div>
+            {% endif %}
+
+            <!-- VEHICLE PANES -->
+            {% for vehicle in data.vehicle_schedules %}
+            <div id="vehicle{{ vehicle.vehicle.id }}" class="pane">
+                    
+                <div class="dashboard-header">
+                    <div class="vehicle-header">
+                        <h1 class="dashboard-title">
+                            Vehicle {{ vehicle.vehicle.id }}
+                        </h1>
+
+                        <div class="vehicle-tags">
+                            <span class="vehicle-tag type">
+                                {{ data.vehicles[vehicle.vehicle.id].vehicle_type }}
+                            </span>
+
+                            <span class="vehicle-tag category">
+                                {{ vehicle.vehicle.category }}
+                            </span>
+
+                            <span class="vehicle-tag capacity">
+                                Cap: {{ vehicle.vehicle.capacity }}
+                            </span>
+                        </div>
+                    </div>
 
                     <button class="upload-btn"
                             onclick="window.location.href='/input'">
@@ -198,12 +530,12 @@
 
                 <div class="kpi-row">
                     <div class="kpi-card">
-                        <h4>Category</h4>
-                        <h2>{{ vehicle.vehicle.category }}</h2>
+                        <h4>Cost Per Km</h4>
+                        <h2>₹{{ data.vehicles[vehicle.vehicle.id].cost_per_km }} / km</h2>
                     </div> 
                     <div class="kpi-card">
-                        <h4>Capacity</h4>
-                        <h2>{{ vehicle.vehicle.capacity }}</h2>
+                        <h4>Average Speed</h4>
+                        <h2>{{ data.vehicles[vehicle.vehicle.id].avg_speed }} kmph</h2>
                     </div> 
                     <div class="kpi-card">
                         <h4>Distance</h4>
@@ -221,22 +553,22 @@
 
                 <div id="{{ vehicle.vehicle.id }}" class="map"></div>
 
-                <table>
+                <table id="{{ vehicle.vehicle.id }}-trip-table">
                 <tr>
                 <th>Trip</th>
                 <th>Route</th>
                 <th>Start</th>
                 <th>Arrival</th>
-                <th>Distance (km)</th>
+                <th>Distance</th>
                 <th>Cost</th>
                 </tr>
 
                 {% set ns = namespace(curr = vehicle.vehicle.id) %}
                 {% for trip in vehicle.trips %}
                 <tr class="trip-row" 
+                    data-category="trip"
                     id="{{ vehicle.vehicle.id }}_{{ trip.trip_number }}"
-                    onclick="toggleTripDetails('{{ vehicle.vehicle.id }}', {{ trip.trip_number }})" 
-                    style="background-color: {{ route_colors[(trip.trip_number - 1) % (route_colors | length)] }};">
+                    onclick="toggleTripDetails('{{ vehicle.vehicle.id }}', {{ trip.trip_number }})">
                     <td>{{ trip.trip_number }}</td>
                     <td>
                         <span class="route-office">{{ ns.curr }}</span>
@@ -250,30 +582,44 @@
 
                     <td>{{ trip.start_time }}</td>
                     <td>{{ trip.arrival_at_office }}</td>
-                    <td>{{ trip.distance_km }}</td>
-                    <td>{{ trip.cost }}</td>
+                    <td>{{ trip.distance_km }} km</td>
+                    <td>₹{{ trip.cost }}</td>
                 </tr>
                 <!-- EXPANDABLE DETAILS ROW -->
                 <tr class="trip-details-row">
-                <td colspan="6">
+                <td colspan="6" data-category="inner">
                     <div class="trip-details-content">
-                        <table class="inner-table">
+                        <table id="{{ vehicle.vehicle.id }}-details-table-{{ trip.trip_number }}" class="inner-table">
                             <tr>
                                 <th>Sequence</th>
                                 <th>Employee</th>
+                                <th>Constraints Compromised</th>
                                 <th>Pickup Time</th>
                             </tr>
-
+                            {% set word_counts = {1: 'ONE', 2: 'TWO', 3:'THREE'} %}
                             {% for emp in trip.pickup_sequence %}
-                            <tr>
+                                {% set unsat_count = data.employees[emp].unsatisfied | length %}
+                                {% if unsat_count > 0 %}
+                            <tr class="trip-employee-row" data-category="compromised" onclick="focusEmployee('{{ emp }}')">
+                                {% else %}
+                            <tr class="trip-employee-row" data-category="satisfied" onclick="focusEmployee('{{ emp }}')">
+                                {% endif %} 
                                 <td>{{ loop.index }}</td>
                                 <td>{{ emp }}</td>
+                                <td class="constraint-cell"
+                                    data-constraints="{{ emp }}||{{ data.employees[emp].unsatisfied | join(' | ') }}">
+                                    {% if unsat_count > 0 %}
+                                        {{ word_counts[unsat_count] }}
+                                    {% else %}
+                                        ALL SATISFIED
+                                    {% endif %}
+                                </td>
                                 <td>{{ data.employees[emp].pickup_time }}</td>
                             </tr>
                             {% endfor %}
 
                             <tr class="dropoff-row">
-                                <td colspan="2"><strong>Office</strong></td>
+                                <td colspan="2"><strong>Office</strong></td><td></td>
                                 <td><strong>{{ trip.arrival_at_office }}</strong></td>
                             </tr>
                         </table>
@@ -286,12 +632,12 @@
             </div>
             {% endfor %}
         </div>
+        <div id="constraintPopup" class="constraint-popup"></div>
+        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
         <script>
             const data = {{ data|tojson }};
-            const route_colors = {{ route_colors|tojson }};
-            const pie_colors = {{ pie_colors|tojson }};
         </script>
-        <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+        <script src="{{ url_for('static', filename='js/colors.js') }}"></script>
         <script src="{{ url_for('static', filename='js/final.js') }}"></script>
     </body>
 </html>
