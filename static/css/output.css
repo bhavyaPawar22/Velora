@@ -283,8 +283,15 @@ th {
 }
 
 .dropoff-row {
+    cursor: pointer;
     background: rgba(34,197,94,0.15);
     color: #86efac;
+}
+
+.pickup-row {
+    cursor: pointer;
+    background: rgba(189, 132, 17, 0.15);
+    color: #ffb700;
 }
 
 .trip-row:hover {

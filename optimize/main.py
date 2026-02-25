@@ -47,7 +47,7 @@ class DataLoader:
         return 480.0
     
     @staticmethod
-    def load(filepath: str) -> Tuple[List[Any], List[Any], Any, Dict]:
+    def load(filepath: str, verbose : bool = True) -> Tuple[List[Any], List[Any], Any, Dict]:
         """Load data and return employees, vehicles, office, and metadata."""
         # Load raw dataframes from Excel
         emp_df = pd.read_excel(filepath, sheet_name='employees')
@@ -89,9 +89,10 @@ class DataLoader:
                         except (ValueError, IndexError):
                             continue
                             
-            print(f"Successfully loaded metadata: α={metadata['alpha']}, β={metadata['beta']}")
-            if tolerance_map:
-                print(f"Custom priority tolerances loaded: {tolerance_map}")
+            if verbose:
+                print(f"Successfully loaded metadata: α={metadata['alpha']}, β={metadata['beta']}")
+                if tolerance_map:
+                    print(f"Custom priority tolerances loaded: {tolerance_map}")
 
         except Exception as e:
             print(f"No valid metadata sheet found or error parsing: {e}. Using defaults.")
@@ -430,7 +431,7 @@ class ResultsVerifier:
         fully_satisfied = assigned_employees - employees_compromised
         results['summary']['employees_compromised'] = employees_compromised
 
-        results['summary']['satisfied_pct'] = round(100 * fully_satisfied / assigned_employees, 2)
+        results['summary']['satisfied_pct'] = round(100 * fully_satisfied / self.state.total_employees, 2)
         if violations > 0:
             results['summary']['vehicle_type_violation_pct'] = round(100 * vehicle_type_violations / violations, 2)
             results['summary']['sharing_violation_pct'] = round(100 * sharing_violations / violations, 2)
@@ -571,8 +572,10 @@ class ResultsVerifier:
 
 def optimize(filepath: str, verbose: bool = True) -> Dict:
     # --- PHASE 1: Strict Solve ---
+    print('TestCase:', filepath, 'Input!')
+
     t0 = time.time()
-    employees, vehicles, office, metadata = DataLoader.load(filepath)
+    employees, vehicles, office, metadata = DataLoader.load(filepath, verbose=verbose)
     
     if verbose:
         print(f"Loaded {len(employees)} employees, {len(vehicles)} vehicles")
@@ -635,6 +638,7 @@ def optimize(filepath: str, verbose: bool = True) -> Dict:
     if verbose:
         verifier.print_results(results)
     
+    print('TestCase:', filepath, 'Output!')
     return results
 
 if __name__ == "__main__":

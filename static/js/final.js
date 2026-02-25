@@ -2,6 +2,8 @@ let maps = {};
 let routes = {};
 let emp_trip = {};
 let emp_markers = {};
+let office_markers = {};
+let depot_markers = {};
 let unassigned_emp_route = {};
 const office = data.Office;
 let totalEmployees = data.summary.total_employees;
@@ -284,6 +286,42 @@ function goToViolation(sectionId) {
     }, 150);
 }
 
+function showOffice(id) {
+    const marker = office_markers[id];
+    const map = maps[id];
+
+    // Zoom to employee
+    map.setView(marker.getLatLng(), 16, {
+        animate: true,
+        duration: 0.8
+    });
+
+    // Optional bounce effect (simple visual pulse)
+    marker.setZIndexOffset(1000);
+
+    setTimeout(() => {
+        marker.setZIndexOffset(0);
+    }, 1200);
+}
+
+function showDepot(id) {
+    const marker = depot_markers[id];
+    const map = maps[id];
+
+    // Zoom to employee
+    map.setView(marker.getLatLng(), 16, {
+        animate: true,
+        duration: 0.8
+    });
+
+    // Optional bounce effect (simple visual pulse)
+    marker.setZIndexOffset(1000);
+
+    setTimeout(() => {
+        marker.setZIndexOffset(0);
+    }, 1200);
+}
+
 function filterViolation(category, cardElement = null) {
     if (totalViolations == 0)
         return;
@@ -379,6 +417,8 @@ data.vehicle_schedules.forEach(vehicle =>{
         offset: [0, -10],
         sticky: true
     });
+
+    depot_markers[vehicle.vehicle.id] = depotMarker;
     
     let officeMarker = L.marker([office[0], office[1]], { icon: officeIcon })
     .addTo(map);
@@ -392,6 +432,8 @@ data.vehicle_schedules.forEach(vehicle =>{
         offset: [0, -10],
         sticky: true
     });
+
+    office_markers[vehicle.vehicle.id] = officeMarker;
 
     vehicle.trips.forEach(trip=>{
         const coordinates = trip.route.map(coord => [coord[0], coord[1]]);

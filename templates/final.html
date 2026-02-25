@@ -148,7 +148,7 @@
 
                                 <div class="health-card green"
                                     onclick="showPane('employees', document.getElementById('employees-bar')); filterEmployees('satisfied')">
-                                    <h4>Fully Satisfied</h4>
+                                    <h4>Satisfied</h4>
                                     <h2>{{ data.summary.satisfied_pct }}%</h2>
                                 </div>
 
@@ -278,7 +278,7 @@
                             <th>Pickup Time</th>
                             <th>Drop-off Time</th>
                         </tr>
-                        {% set sharing_word_count = {1: 'single', 2: 'double', 3: 'triple'} %}
+                        {% set sharing_word_count = {1: 'single', 2: 'double', 3: 'triple', '-': '-'} %}
                         {% for id, emp in data.employees.items() %}
 
                             {% if not emp.assigned %}
@@ -596,6 +596,17 @@
                                 <th>Constraints Compromised</th>
                                 <th>Pickup Time</th>
                             </tr>
+                            {% if ns.curr == "Office" %}
+                            <tr class="dropoff-row" onclick="showOffice('{{ vehicle.vehicle.id}}')">
+                                <td colspan="2"><strong>Office</strong></td><td></td>
+                                <td><strong>{{ trip.start_time }}</strong></td>
+                            </tr>
+                            {% else %}
+                            <tr class="pickup-row" onclick="showDepot('{{ vehicle.vehicle.id}}')">
+                                <td colspan="2"><strong>Depot</strong></td><td></td>
+                                <td><strong>{{ trip.start_time }}</strong></td>
+                            </tr>
+                            {% endif %}
                             {% set word_counts = {1: 'ONE', 2: 'TWO', 3:'THREE'} %}
                             {% for emp in trip.pickup_sequence %}
                                 {% set unsat_count = data.employees[emp].unsatisfied | length %}
@@ -618,7 +629,7 @@
                             </tr>
                             {% endfor %}
 
-                            <tr class="dropoff-row">
+                            <tr class="dropoff-row" onclick="showOffice('{{ vehicle.vehicle.id}}')">
                                 <td colspan="2"><strong>Office</strong></td><td></td>
                                 <td><strong>{{ trip.arrival_at_office }}</strong></td>
                             </tr>
