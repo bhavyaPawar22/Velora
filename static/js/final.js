@@ -87,7 +87,7 @@ function toggleTripDetails(vehicle, row_n) {
     // Reset color of all routes
     for (let rn in routes[vehicle]){
         routes[vehicle][rn].setStyle({
-            color: getGradientColor(rn - 1, routes[vehicle].length, cyan_shades)
+            color: getGradientColor(rn - 1, Object.keys(routes[vehicle]).length, cyan_shades)
         });
     }
 
@@ -95,7 +95,7 @@ function toggleTripDetails(vehicle, row_n) {
     if (detailsRow.style.display === "table-row") {
         detailsRow.style.display = "none";
         routes[vehicle][row_n].setStyle({
-            color: getGradientColor(row_n - 1, routes[vehicle].length, cyan_shades)
+            color: getGradientColor(row_n - 1, Object.keys(routes[vehicle]).length, cyan_shades)
         });
     } else {
         detailsRow.style.display = "table-row";
@@ -130,7 +130,7 @@ function showTripDetails(vehicle, row_n) {
     // Reset color of all routes
     for (let rn in routes[vehicle]){
         routes[vehicle][rn].setStyle({
-            color: getGradientColor(rn - 1, routes[vehicle].length, cyan_shades)
+            color: getGradientColor(rn - 1, Object.keys(routes[vehicle]).length, cyan_shades)
         });
     }
 
