@@ -1,11 +1,12 @@
 from flask import *
 import optimize.main as sol
 
-sol.precompute()
-
-#APP
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
+
+@app.route('/')
+def home():
+    return redirect('/input')
 
 @app.route('/input')
 def input():
@@ -44,4 +45,8 @@ def result():
     return jsonify({})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug = True)
+    print("APP STARTING...")
+    sol.precompute()
+    print("APP RUNNING...")
+    app.run(host='0.0.0.0', port=7860, debug = True)
+    print("APP STOPPED RUNNING")

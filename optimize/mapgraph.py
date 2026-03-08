@@ -11,22 +11,17 @@
 #                                                                                                   #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
 
-from collections import deque
 import numpy as np
 import heapq
 import sys
 from scipy.spatial import KDTree
 import csv
 import os
-import matplotlib
-from matplotlib.figure import Figure
-import matplotlib.patheffects as pe
-matplotlib.use('Agg')
 import psutil
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-node_file = 'bengaluru/graph_nodes.csv'
-edge_file = 'bengaluru/graph_edges.csv'
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+node_file = os.path.join(BASE_DIR, "bengaluru", "graph_nodes.csv")
+edge_file = os.path.join(BASE_DIR, "bengaluru", "graph_edges.csv")
 
 nodes = {}
 xnodes = {}
