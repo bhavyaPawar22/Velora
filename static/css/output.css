@@ -116,11 +116,13 @@ body {
 
 .content {
     flex: 1;
-    padding: 20px 40px;
     overflow-y: auto;
 }
 
-.pane { display: none; }
+.pane { 
+    display: none; 
+    padding: 20px 40px;
+}
 .pane.active { display: block; }
 
 /* ================= SUMMARY ================= */

@@ -47,9 +47,21 @@ const depotIcon = L.divIcon({
 
 function showPane(id,btn){
     document.querySelectorAll('.pane').forEach(p=>p.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
+    const pane = document.getElementById(id);
+    pane.classList.add('active');
     document.querySelectorAll('.nav-button').forEach(b=>b.classList.remove('active'));
     btn.classList.add('active');
+
+    /* ensure sidebar scrolls to active button */
+    btn.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+    });
+
+    pane.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
 
     const mapDiv = document.querySelector(`#${id} .map`);
     if (mapDiv) {
@@ -99,6 +111,10 @@ function toggleTripDetails(vehicle, row_n) {
         });
     } else {
         detailsRow.style.display = "table-row";
+        detailsRow.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest"
+        });
         routes[vehicle][row_n].setStyle({
             color: "red"
         });
@@ -136,6 +152,10 @@ function showTripDetails(vehicle, row_n) {
 
     // Show current
     detailsRow.style.display = "table-row";
+    detailsRow.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+    });
     routes[vehicle][row_n].setStyle({
         color: "red"
     });
@@ -184,7 +204,7 @@ function showEmployee(eid){
 }
 
 function filterEmployees(category, cardElement = null) {
-
+    const table = document.getElementById("employees-table-panel");
     const rows = document.querySelectorAll(".emp_row");
     const cards = document.querySelectorAll(".emp-filter");
 
@@ -215,6 +235,10 @@ function filterEmployees(category, cardElement = null) {
             row.style.display = "none";
         }
     });
+    table.scrollIntoView({
+        behavior: "smooth",
+        block: "start"
+    });
 }
 
 function focusEmployee(eid) {
@@ -225,6 +249,11 @@ function focusEmployee(eid) {
     const map = maps[vehicle];
 
     // Zoom to employee
+    document.getElementById(vehicle).scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+    });
+
     map.setView(marker.getLatLng(), 16, {
         animate: true,
         duration: 0.8
@@ -242,6 +271,10 @@ function showEmployeeRoute(id){
     if (unassigned == 0)
         return;
     unassigned_emp_route[id].bringToFront();
+    document.getElementById("unassigned-map").scrollIntoView({
+        behavior: "smooth",
+        block: "nearest"
+    });
     maps["unassigned-map"].fitBounds(unassigned_emp_route[id].getBounds(), {
         padding: [40, 40],   // space around route
         maxZoom: 15,
