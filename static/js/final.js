@@ -394,6 +394,27 @@ function filterViolation(category, cardElement = null) {
 
         el.style.display = key === category ? "block" : "none";
     });
+
+    sectionId = sections[category];
+    setTimeout(() => {
+
+        const section = document.getElementById(sectionId);
+        if (!section) return;
+
+        section.scrollIntoView({
+            behavior: "smooth",
+            block: "start"
+        });
+
+        // Optional subtle highlight animation
+        section.style.transition = "box-shadow 0.4s ease";
+        section.style.boxShadow = "0 0 30px rgba(255,59,48,0.5)";
+
+        setTimeout(() => {
+            section.style.boxShadow = "";
+        }, 1200);
+
+    }, 150);
 }
 
 /* ================= EMPLOYEES LEGEND ================= */

@@ -372,7 +372,6 @@
                 </div>
 
                 <!-- VEHICLE TYPE -->
-                {% if data.violations.vehicle_type_violations|length > 0 %}
                 <div class="panel" id="vehicle-type-section">
                     <h3>Vehicle Type Violations</h3>
                     <table id="vehicle-type-violations-table">
@@ -382,6 +381,7 @@
                             <th>Preferred</th>
                             <th>Actual</th>
                         </tr>
+                {% if data.violations.vehicle_type_violations|length > 0 %}
                         {% for v in data.violations.vehicle_type_violations %}
                         <tr onclick="showEmployee('{{ v.employee }}')" class="violation-row">
                             <td>{{ v.employee }}</td>
@@ -390,12 +390,11 @@
                             <td>{{ v.actual }}</td>
                         </tr>
                         {% endfor %}
+                {% endif %}
                     </table>
                 </div>
-                {% endif %}
 
                 <!-- SHARING -->
-                {% if data.violations.sharing_violations|length > 0 %}
                 <div class="panel" id="sharing-section">
                     <h3>Sharing Violations</h3>
                     <table id="sharing-violations-table">
@@ -405,6 +404,7 @@
                             <th>Preferred</th>
                             <th>Actual</th>
                         </tr>
+                {% if data.violations.sharing_violations|length > 0 %}
                         {% for v in data.violations.sharing_violations %}
                         <tr onclick="showEmployee('{{ v.employee }}')" class="violation-row">
                             <td>{{ v.employee }}</td>
@@ -413,12 +413,11 @@
                             <td>{{ v.actual }}</td>
                         </tr>
                         {% endfor %}
+                {% endif %}
                     </table>
                 </div>
-                {% endif %}
 
                 <!-- TIME -->
-                {% if data.violations.time_violations|length > 0 %}
                 <div class="panel" id="time-section">
                     <h3>Time Violations</h3>
                     <table id="time-violations-table">
@@ -428,6 +427,7 @@
                             <th>Preferred</th>
                             <th>Actual</th>
                         </tr>
+                {% if data.violations.time_violations|length > 0 %}
                         {% for v in data.violations.time_violations %}
                         <tr onclick="showEmployee('{{ v.employee }}')" class="violation-row">
                             <td>{{ v.employee }}</td>
@@ -436,10 +436,9 @@
                             <td>{{ v.actual }}</td>
                         </tr>
                         {% endfor %}
+                {% endif %}
                     </table>
                 </div>
-                {% endif %}
-
             </div>
             {% endif %}
             
