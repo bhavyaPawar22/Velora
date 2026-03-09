@@ -50,3 +50,6 @@ if __name__ == '__main__':
     print("APP RUNNING...")
     app.run(host='0.0.0.0', port=7860, debug = True)
     print("APP STOPPED RUNNING")
+else:
+    print("APP PRECOMPUTING...")
+    sol.precompute()

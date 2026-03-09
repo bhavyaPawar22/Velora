@@ -13,9 +13,7 @@ edge_file = os.path.join(BASE_DIR, "bengaluru", "graph_edges.csv")
 nodes = {}
 xnodes = {}
 r_nodes = {}
-c_nodes = {}
 edges = {}
-r_edges = {}
 R = 6731
 points = None
 tree = None
@@ -37,12 +35,10 @@ def load_nodes():
             row['lng'] = float(row['lng'])
             row['r'] = int(row['r'])
             nodes[row['id']] = (row['lat'], row['lng'])
-            c_nodes[row['id']] = row['r']
             if (row['r'] == 1):
                 r_nodes[row['id']] = (row['lat'], row['lng'])
             xnodes[(row['lat'], row['lng'])] = row['id']
             edges[row['id']] = []
-            r_edges[row['id']] = []
 
 def load_edges():
     with open(edge_file, 'r') as f:
@@ -52,7 +48,6 @@ def load_edges():
             row['id2'] = int(row['id2'])
             row['length'] = float(row['length'])
             edges[row['id1']].append((row['id2'], row['length']))
-            r_edges[row['id2']].append((row['id1'], row['length']))
 
 def precompute():
     global points
@@ -76,24 +71,24 @@ def nearest_node(loc):
     #print(f'Node {nrst} found {md * 10**3} m away')
     return nrst
 
-def dijkstras(dest):
-    pq = []
-    dist = {}
-    for n in r_nodes.keys():
-        dist[n] = sys.maxsize
-    dist[dest] = 0
-    heapq.heappush(pq, (0, dest))
+# def dijkstras(dest):
+#     pq = []
+#     dist = {}
+#     for n in r_nodes.keys():
+#         dist[n] = sys.maxsize
+#     dist[dest] = 0
+#     heapq.heappush(pq, (0, dest))
 
-    while pq:
-        d, u = heapq.heappop(pq)
-        if d > dist[u]:
-            continue
+#     while pq:
+#         d, u = heapq.heappop(pq)
+#         if d > dist[u]:
+#             continue
         
-        for v, w in r_edges[u]:
-            if dist[u] + w < dist[v]:
-                dist[v] = dist[u] + w
-                heapq.heappush(pq, (dist[v], v))
-    return dist
+#         for v, w in r_edges[u]:
+#             if dist[u] + w < dist[v]:
+#                 dist[v] = dist[u] + w
+#                 heapq.heappush(pq, (dist[v], v))
+#     return dist
 
 def reconstruct_path(came_from, cur):
     path = [cur]
