@@ -1,16 +1,3 @@
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-#                                                                                                   #
-#   Include:                                                                                        #
-#   import mapgraph as mp                                                                           #
-#   mp.precompute()                                                                                 #
-#                                                                                                   #
-#   Member Functions:                                                                               #
-#   mp.nearest_node(tuple of coordinates (lat, lng)) -> id of nearest node                          #
-#   mp.optimal_route(source_node, destination_node) -> route (list of ordered nodes), length        #
-#   mp.plot_route(route_lat, route_lng) -> url of plotted graph                                     #
-#                                                                                                   #
-# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
-
 import numpy as np
 import heapq
 import sys
