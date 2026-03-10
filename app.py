@@ -44,12 +44,10 @@ def result():
 
     return jsonify({})
 
+print("APP PRECOMPUTING...")
+sol.precompute()
+
 if __name__ == '__main__':
-    print("APP STARTING...")
-    sol.precompute()
     print("APP RUNNING...")
-    app.run(host='0.0.0.0', port=7860, debug = True)
-    print("APP STOPPED RUNNING")
-else:
-    print("APP PRECOMPUTING...")
-    sol.precompute()
+    app.run(host='0.0.0.0', port=7860, debug = True, use_reloader = False)
+    print("APP STOPPED.")
