@@ -425,6 +425,7 @@
                             <th>Employee</th>
                             <th>Vehicle</th>
                             <th>Preferred</th>
+                            <th>Allowed Delay</th>
                             <th>Actual</th>
                         </tr>
                 {% if data.violations.time_violations|length > 0 %}
@@ -433,6 +434,7 @@
                             <td>{{ v.employee }}</td>
                             <td>{{ v.vehicle }}</td>
                             <td>{{ v.preferred }}</td>
+                            <td>{{ v.max }}</td>
                             <td>{{ v.actual }}</td>
                         </tr>
                         {% endfor %}

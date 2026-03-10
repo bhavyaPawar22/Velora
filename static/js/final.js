@@ -1112,7 +1112,7 @@ document.addEventListener("mouseover", function(e) {
     var DROP_ROW = `
         <tr> 
             <td>Drop Time</td>
-            <td>${data.employees[eid].drop_max}</td>
+            <td>${data.employees[eid].drop_preference} - ${data.employees[eid].drop_max}</td>
             <td>${data.employees[eid].dropoff_time}</td>
         </tr>`;
     
@@ -1120,7 +1120,7 @@ document.addEventListener("mouseover", function(e) {
         DROP_ROW = `
         <tr style="background-color:  #d70000""> 
             <td>Drop Time</td>
-            <td>${data.employees[eid].drop_max}</td>
+            <td>${data.employees[eid].drop_preference} - ${data.employees[eid].drop_max}</td>
             <td>${data.employees[eid].dropoff_time}</td>
         </tr>`;
     }

@@ -297,6 +297,7 @@ class ResultsVerifier:
                 'priority': emp.priority,
                 'vehicle_preference': emp.vehicle_preference.value,
                 'sharing_preference': emp.sharing_preference.value,
+                'drop_preference': self._fmt_time(emp.latest_drop),
                 'drop_max': self._fmt_time(emp.adjusted_latest_drop),
                 'pickup': emp.pickup,
                 'vehicle': '-',
@@ -466,7 +467,8 @@ class ResultsVerifier:
                     time_violations.append({
                         "employee": emp_id,
                         "vehicle": emp['vehicle'],
-                        "preferred": emp['drop_max'],
+                        "preferred": emp['drop_preference'],
+                        "max": emp['drop_max'],
                         "actual": emp['dropoff_time']
                     })
 
